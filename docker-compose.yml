@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "28080:8000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "23000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:28080/api
+    restart: unless-stopped
+    depends_on:
+      - backend

@@ -68,7 +68,31 @@ PYTHONPATH=. venv/bin/python backend/database/init_db.py
 
 ---
 
-## How to Run
+## Running with Docker Compose
+
+You can containerize and run the complete application (both the FastAPI backend and Next.js frontend) with a single command. The services are mapped to custom, uncommon ports (`28080` and `23000`) on the host to avoid clashing with other running services.
+
+### 1. Start the Containers
+From the root directory, run:
+```bash
+docker compose up -d --build
+```
+
+### 2. Access the Application
+- **Frontend Dashboard**: [http://localhost:23000](http://localhost:23000)
+- **Backend API**: [http://localhost:28080/docs](http://localhost:28080/docs) (Swagger documentation)
+
+### 3. Database Persistence
+The database is persisted locally in the `./data/` folder as `./data/opsa.db` via a bind mount. This ensures all your runtime commit history and state projections remain intact across container restarts.
+
+### 4. Customizing Ports
+If you wish to customize the ports, open the [docker-compose.yml](file:///home/fsociety/Shared/Devs/Opsa/docker-compose.yml) file and modify:
+- **Backend Host Port**: Change `"28080:8000"` to your preferred port, and update `NEXT_PUBLIC_API_URL` environment variable value to match (e.g. `http://localhost:<YOUR_PORT>/api`).
+- **Frontend Host Port**: Change `"23000:3000"` to your preferred port.
+
+---
+
+## How to Run Locally (Without Docker)
 
 To run Opsa locally, start both the backend API server and frontend development server.
 
