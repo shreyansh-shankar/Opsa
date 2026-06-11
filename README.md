@@ -30,7 +30,7 @@ Next.js Dashboard
 
 ## Setup & Installation
 
-Ensure you have **Python 3.10+** and **Node.js 18+** installed.
+Ensure you have **Python 3.12+** and **Node.js 20+** installed.
 
 ### 1. Backend Setup
 
@@ -45,15 +45,14 @@ Ensure you have **Python 3.10+** and **Node.js 18+** installed.
    ```
 4. Install python dependencies:
    ```bash
-   pip install fastapi uvicorn sqlalchemy pydantic pytest httpx
+   pip install -r backend/requirements.txt
    ```
 
 ### 2. Initialize the Local Database
-Opsa stores derived state in a local SQLite database file `opsa.db` at the root. Run the initialization script to generate the event log and projections schemas:
+Opsa stores derived state in a local SQLite database file `opsa.db` at the root. Start the FastAPI server to automatically create the database and tables, or run the initialization script manually:
 ```bash
 PYTHONPATH=. venv/bin/python backend/database/init_db.py
 ```
-*(Note: Starting the FastAPI server will also automatically create the database and tables if they do not exist).*
 
 ### 3. Frontend Setup
 
@@ -63,7 +62,7 @@ PYTHONPATH=. venv/bin/python backend/database/init_db.py
    ```
 2. Install npm packages:
    ```bash
-   npm install
+   npm ci
    ```
 
 ---
@@ -106,7 +105,11 @@ This runs the API server on `http://localhost:8000`.
 ### Start the Next.js Frontend
 In the `frontend/` directory, run:
 ```bash
+# Connects to default local API (http://localhost:8000/api)
 npm run dev -- --port 3000
+
+# Or, to connect to a custom local backend API port (e.g. 28080):
+NEXT_PUBLIC_API_URL=http://localhost:28080/api npm run dev -- --port 3000
 ```
 This serves the dashboard on `http://localhost:3000`. Open this URL in your browser to interact with the app.
 
