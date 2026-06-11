@@ -2,14 +2,7 @@
 
 import React from "react";
 import { useStore } from "@/store/useStore";
-import { Terminal, ShieldAlert, CheckCircle, HelpCircle, ArrowRight, Play } from "lucide-react";
-
-interface CommandHelpItem {
-  cmd: string;
-  desc: string;
-  example: string;
-  notes?: string;
-}
+import { Terminal, HelpCircle, Play, Sparkles, Sliders } from "lucide-react";
 
 export default function ReferenceView() {
   const { setActiveTab, setPendingConsoleInput } = useStore();
@@ -162,54 +155,69 @@ export default function ReferenceView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-2 border-b border-gray-800 pb-3">
-        <HelpCircle className="h-5 w-5 text-cyan-400" />
-        <h2 className="font-mono font-bold text-sm tracking-wider text-gray-200">OPSA COMMAND REFERENCE GUIDE</h2>
+      {/* Blueprint Header Banner */}
+      <div className="glass-panel p-6 rounded-2xl border border-[#e3dbcd] relative overflow-hidden bg-[#2E3630] text-[#FAF7F2] shadow-sm flex flex-col gap-2">
+        {/* Subtle technical graphic grids background */}
+        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
+          backgroundImage: 'radial-gradient(#FAF7F2 1px, transparent 1px)',
+          backgroundSize: '16px 16px'
+        }} />
+        <h2 className="text-2xl font-serif font-bold tracking-tight z-10">Refine Your Architecture</h2>
+        <p className="text-xs font-sans text-[#EDE9E1]/80 max-w-lg z-10 leading-relaxed">
+          Browse the schema for transactional operations within the MISSIONOS ecosystem.
+          Manage nested hierarchies and maintain declarative integrity.
+        </p>
       </div>
 
-      <div className="glass-panel p-5 rounded-xl border border-white/5 flex flex-col gap-4">
-        <div className="flex items-center gap-2 text-xs font-mono text-cyan-300 bg-cyan-500/5 p-3 rounded-lg border border-cyan-500/10">
+      <div className="flex flex-col gap-5">
+        <div className="flex items-center gap-2 border-b border-[#e3dbcd] pb-3">
+          <HelpCircle className="h-5 w-5 text-[#7A8C74]" />
+          <h2 className="font-sans font-bold text-xs tracking-wider text-[#2c312e] uppercase">OPSA COMMAND REFERENCE GUIDE</h2>
+        </div>
+
+        <div className="flex items-center gap-2.5 text-xs font-mono text-[#D4A351] bg-[#D4A351]/5 p-3 rounded-xl border border-[#D4A351]/15">
           <Terminal className="h-4 w-4 shrink-0" />
           <span>
-            <strong>Usage Tip:</strong> In transactional scripts, wrap commands in <code>BEGIN TRANSACTION</code> and <code>END TRANSACTION</code> blocks.
+            <strong>Usage Tip:</strong> In transactional scripts, wrap commands in <code>BEGIN TRANSACTION</code> and <code>END TRANSACTION</code> blocks for atomicity.
           </span>
         </div>
 
-        <div className="flex flex-col gap-8">
+        {/* Command categories */}
+        <div className="flex flex-col gap-8 mt-2">
           {categories.map((cat, idx) => (
-            <div key={idx} className="flex flex-col gap-3">
+            <div key={idx} className="flex flex-col gap-4">
               <div className="flex flex-col">
-                <h3 className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wide">
+                <h3 className="text-xs font-sans font-bold text-[#7A8C74] uppercase tracking-wider">
                   {cat.title}
                 </h3>
-                <span className="text-[10px] text-gray-500 font-mono mt-0.5">{cat.subtitle}</span>
+                <span className="text-[10px] text-[#67736b] font-mono mt-0.5">{cat.subtitle}</span>
               </div>
 
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-4">
                 {cat.items.map((item, itemIdx) => (
                   <div
                     key={itemIdx}
-                    className="p-3 bg-gray-950/40 border border-gray-900 rounded-lg flex flex-col gap-2 hover:border-gray-850 transition-colors"
+                    className="glass-panel p-4 rounded-xl border border-[#e3dbcd] bg-[#FAF7F2] flex flex-col gap-3 hover:border-[#d6cebf] transition-all shadow-sm"
                   >
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-1">
-                      <code className="text-xs font-mono font-bold text-gray-200 bg-black/40 px-2 py-0.5 rounded border border-gray-850">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                      <code className="text-xs font-mono font-bold text-[#EDE9E1] bg-[#2E3630] px-3 py-1 rounded-lg border border-[#2c312e]/10 shadow-sm">
                         {item.cmd}
                       </code>
                       <button
                         onClick={() => handleTry(item.example)}
-                        className="flex items-center gap-1 text-[9px] font-mono text-cyan-400 hover:text-cyan-300 border border-cyan-500/10 hover:border-cyan-500/30 bg-cyan-500/5 px-2 py-0.5 rounded transition-all"
+                        className="flex items-center gap-1.5 text-[9px] font-mono text-[#7A8C74] hover:text-white border border-[#7A8C74]/20 hover:bg-[#7A8C74] bg-[#7A8C74]/5 px-2.5 py-1 rounded-lg transition-all cursor-pointer"
                       >
                         <Play className="h-2.5 w-2.5" />
                         <span>Try in Console</span>
                       </button>
                     </div>
 
-                    <p className="text-[11px] text-gray-400 font-mono leading-relaxed">
+                    <p className="text-xs text-[#2c312e]/80 font-sans leading-relaxed pl-1">
                       {item.desc}
                     </p>
 
                     {item.notes && (
-                      <span className="text-[9px] text-amber-500/90 font-mono italic">
+                      <span className="text-[9.5px] text-[#D4A351] font-mono pl-1">
                         * Note: {item.notes}
                       </span>
                     )}
@@ -218,6 +226,41 @@ export default function ReferenceView() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Bottom double column information footnotes */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+          <div className="glass-panel p-5 rounded-2xl border border-[#e3dbcd] bg-[#FAF7F2] flex flex-col gap-3 shadow-sm">
+            <div className="flex items-center gap-2 text-[#CE8D6D]">
+              <Sparkles className="h-4.5 w-4.5" />
+              <h4 className="text-xs font-sans font-bold uppercase tracking-wider">Semantic Naming</h4>
+            </div>
+            <p className="text-xs text-[#67736b] font-sans leading-relaxed">
+              Ensure your structure names are descriptive yet concise. The OPSA runtime uses these identifiers for auto-generating your operation timeline and dependency tree.
+            </p>
+            <button
+              onClick={() => handleTry("SHOW RESPONSIBILITIES")}
+              className="text-[10px] font-mono text-[#CE8D6D] hover:underline self-start mt-1 cursor-pointer"
+            >
+              Learn about naming conventions →
+            </button>
+          </div>
+
+          <div className="glass-panel p-5 rounded-2xl border border-[#e3dbcd] bg-[#FAF7F2] flex flex-col gap-3 shadow-sm">
+            <div className="flex items-center gap-2 text-[#7A8C74]">
+              <Sliders className="h-4.5 w-4.5" />
+              <h4 className="text-xs font-sans font-bold uppercase tracking-wider">Nesting Limits</h4>
+            </div>
+            <p className="text-xs text-[#67736b] font-sans leading-relaxed">
+              While OPSA supports deep nesting, we recommend a max depth of 4 layers to maintain clarity. Use Responsibility &gt; Project &gt; Goal &gt; Task as your primary mental model.
+            </p>
+            <button
+              onClick={() => handleTry("SHOW TASKS")}
+              className="text-[10px] font-mono text-[#7A8C74] hover:underline self-start mt-1 cursor-pointer"
+            >
+              View best practices →
+            </button>
+          </div>
         </div>
       </div>
     </div>

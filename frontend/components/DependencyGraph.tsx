@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { useStore, GraphNode, GraphEdge } from "@/store/useStore";
-import { Network, Activity } from "lucide-react";
+import { Network } from "lucide-react";
 
 export default function DependencyGraph() {
   const { graph } = useStore();
@@ -10,8 +10,8 @@ export default function DependencyGraph() {
 
   if (!graph || graph.nodes.length === 0) {
     return (
-      <div className="glass-panel p-12 rounded-xl text-center text-gray-500 font-mono text-xs border border-white/5">
-        <Network className="h-8 w-8 mx-auto mb-4 text-cyan-400 opacity-60" />
+      <div className="glass-panel p-12 rounded-2xl text-center text-[#67736b] font-mono text-xs border border-[#e3dbcd]">
+        <Network className="h-8 w-8 mx-auto mb-4 text-[#7A8C74] opacity-60 animate-pulse" />
         <span>No network data available. Declare relationships with BLOCK or LINK.</span>
       </div>
     );
@@ -51,7 +51,6 @@ export default function DependencyGraph() {
       
       const count = colNodes.length;
       colNodes.forEach((node, idx) => {
-        // Distribute vertically
         const ySpacing = height / (count + 1);
         const colY = ySpacing * (idx + 1);
         positions[node.id] = { x: colX, y: colY };
@@ -64,17 +63,17 @@ export default function DependencyGraph() {
   const { nodes, edges, positions } = layoutData;
 
   const getStatusColor = (status: string, type: string) => {
-    if (status === "COMPLETED") return "#10b981"; // emerald
-    if (status === "BLOCKED") return "#f43f5e"; // rose
-    if (status === "DEFERRED") return "#f59e0b"; // amber
-    return type === "RESPONSIBILITY" ? "#8b5cf6" : "#06b6d4"; // violet or cyan
+    if (status === "COMPLETED") return "#5F8C6E"; // Emerald
+    if (status === "BLOCKED") return "#C25953"; // Rose
+    if (status === "DEFERRED") return "#D4A351"; // Mustard
+    return type === "RESPONSIBILITY" ? "#CE8D6D" : "#7A8C74"; // Terracotta or Sage
   };
 
   const getEdgeStyle = (edge: GraphEdge) => {
     const isRelated = hoveredNode === edge.source || hoveredNode === edge.target;
     if (edge.type === "blocks") {
       return {
-        stroke: isRelated ? "#f43f5e" : "#ef4444",
+        stroke: isRelated ? "#C25953" : "#D96E67",
         strokeWidth: isRelated ? 2.5 : 1.5,
         strokeDasharray: "0",
         opacity: hoveredNode && !isRelated ? 0.2 : 0.8
@@ -82,43 +81,43 @@ export default function DependencyGraph() {
     }
     if (edge.type === "hierarchy") {
       return {
-        stroke: isRelated ? "#8b5cf6" : "#4b5563",
+        stroke: isRelated ? "#7A8C74" : "#b0a594",
         strokeWidth: isRelated ? 1.5 : 1.0,
-        strokeDasharray: "4,4",
-        opacity: hoveredNode && !isRelated ? 0.15 : 0.5
+        strokeDasharray: "3,3",
+        opacity: hoveredNode && !isRelated ? 0.2 : 0.6
       };
     }
     // general link
     return {
-      stroke: isRelated ? "#06b6d4" : "#3b82f6",
+      stroke: isRelated ? "#CE8D6D" : "#d6a894",
       strokeWidth: isRelated ? 2.0 : 1.2,
-      strokeDasharray: "2,2",
-      opacity: hoveredNode && !isRelated ? 0.2 : 0.6
+      strokeDasharray: "1,1",
+      opacity: hoveredNode && !isRelated ? 0.25 : 0.6
     };
   };
 
   return (
-    <div className="glass-panel p-5 rounded-xl border border-white/5 flex flex-col gap-4">
-      <div className="flex items-center gap-2 border-b border-gray-800 pb-3">
-        <Network className="h-5 w-5 text-cyan-400" />
-        <h2 className="font-mono font-bold text-sm tracking-wider text-gray-200">DEPENDENCY & COMMITMENT GRAPH</h2>
-        <div className="ml-auto flex items-center gap-4 text-[10px] font-mono text-gray-500">
+    <div className="glass-panel p-5 rounded-2xl border border-[#e3dbcd] bg-[#FAF7F2] flex flex-col gap-4 shadow-sm">
+      <div className="flex items-center gap-2 border-b border-[#e3dbcd] pb-3">
+        <Network className="h-5 w-5 text-[#7A8C74]" />
+        <h2 className="font-sans font-bold text-xs tracking-wider text-[#2c312e] uppercase">DEPENDENCY & COMMITMENT GRAPH</h2>
+        <div className="ml-auto flex items-center gap-3 text-[9px] font-mono text-[#67736b]">
           <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 bg-violet-500 rounded-full" />
+            <span className="w-2 h-2 bg-[#CE8D6D] rounded-full" />
             <span>Responsibility</span>
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 bg-cyan-400 rounded-full" />
+            <span className="w-2 h-2 bg-[#7A8C74] rounded-full" />
             <span>Project/Goal/Task</span>
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2.5 h-0.5 border-t border-dashed border-red-500" />
+            <span className="w-2.5 h-0.5 border-t border-dashed border-[#C25953]" />
             <span>Blocks</span>
           </span>
         </div>
       </div>
 
-      <div className="relative bg-gray-950/70 rounded-lg overflow-x-auto border border-gray-850 p-2 select-none">
+      <div className="relative bg-[#F5F0E6]/50 rounded-xl overflow-x-auto border border-[#e3dbcd] p-2 select-none">
         <svg
           viewBox="0 0 880 500"
           className="w-full min-w-[800px] h-[500px]"
@@ -135,7 +134,7 @@ export default function DependencyGraph() {
               markerHeight="6"
               orient="auto-start-reverse"
             >
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="#ef4444" />
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#C25953" />
             </marker>
             <marker
               id="arrow-link"
@@ -146,7 +145,7 @@ export default function DependencyGraph() {
               markerHeight="5"
               orient="auto-start-reverse"
             >
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#CE8D6D" />
             </marker>
           </defs>
 
@@ -199,26 +198,26 @@ export default function DependencyGraph() {
                 {/* Outer Glow Ring for hover */}
                 {isHovered && (
                   <circle
-                    r="16"
+                    r="15"
                     fill="none"
                     stroke={color}
                     strokeWidth="2"
                     className="animate-ping"
-                    opacity="0.4"
+                    opacity="0.3"
                   />
                 )}
 
                 {/* Node circle */}
                 <circle
-                  r={node.type === "RESPONSIBILITY" ? "12" : "8"}
-                  fill="#1f2937"
+                  r={node.type === "RESPONSIBILITY" ? "11" : "7"}
+                  fill="#FAF7F2"
                   stroke={color}
                   strokeWidth="2.5"
                 />
 
                 {/* Status/Type center dot */}
                 <circle
-                  r={node.type === "RESPONSIBILITY" ? "5" : "3"}
+                  r={node.type === "RESPONSIBILITY" ? "4" : "2.5"}
                   fill={color}
                 />
 
@@ -226,8 +225,8 @@ export default function DependencyGraph() {
                 <text
                   y="-18"
                   textAnchor="middle"
-                  fill={isHovered ? "#22d3ee" : "#f3f4f6"}
-                  fontSize="10"
+                  fill={isHovered ? "#CE8D6D" : "#2c312e"}
+                  fontSize="9.5"
                   fontFamily="monospace"
                   fontWeight={node.type === "RESPONSIBILITY" ? "bold" : "normal"}
                   className="transition-colors pointer-events-none"
@@ -238,9 +237,9 @@ export default function DependencyGraph() {
                 {/* Node type display on hover */}
                 {isHovered && (
                   <text
-                    y="25"
+                    y="22"
                     textAnchor="middle"
-                    fill="#9ca3af"
+                    fill="#67736b"
                     fontSize="8"
                     fontFamily="monospace"
                     className="pointer-events-none"

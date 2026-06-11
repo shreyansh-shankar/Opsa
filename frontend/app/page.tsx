@@ -19,7 +19,10 @@ import {
   RefreshCw,
   Award,
   CircleDot,
-  HelpCircle
+  HelpCircle,
+  Settings,
+  ShieldCheck,
+  User
 } from "lucide-react";
 
 export default function Home() {
@@ -62,7 +65,7 @@ export default function Home() {
 
   const tabs = [
     { id: "mission", label: "Mission Overview", icon: Compass, component: MissionView },
-    { id: "responsibility", label: "Commitment Tree", icon: Layers, component: ResponsibilityView },
+    { id: "responsibility", label: "Commit Tree", icon: Layers, component: ResponsibilityView },
     { id: "graph", label: "Dependency Network", icon: Network, component: DependencyGraph },
     { id: "timeline", label: "Operation Timeline", icon: GitBranch, component: TimelineView },
     { id: "console", label: "System Console", icon: Terminal, component: ConsoleView },
@@ -72,56 +75,51 @@ export default function Home() {
   const ActiveComponent = tabs.find((t) => t.id === activeTab)?.component || MissionView;
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-950 text-gray-100 pb-12 selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="flex flex-col min-h-screen bg-[#F5F0E6] text-[#2c312e] pb-12 selection:bg-[#7A8C74]/30 selection:text-[#2c312e]">
       {/* 1. Header Banner */}
-      <header className="border-b border-gray-900 bg-gray-950/60 sticky top-0 z-40 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <header className="border-b border-[#e3dbcd] bg-[#FAF7F2]/85 sticky top-0 z-40 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex items-center justify-center h-8 w-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-mono font-bold text-lg">
+            <span className="flex items-center justify-center h-8 w-8 rounded-lg bg-[#7A8C74]/10 border border-[#7A8C74]/20 text-[#7A8C74] font-mono font-bold text-lg">
               Ω
             </span>
             <div className="flex flex-col">
-              <h1 className="text-base font-mono font-bold tracking-widest text-cyan-400 uppercase">
-                Opsa <span className="text-gray-400 text-xs font-normal">/ MissionOS</span>
+              <h1 className="text-sm font-serif font-bold tracking-wider text-[#2c312e] uppercase">
+                Opsa <span className="text-[#67736b] text-xs font-sans font-normal">/ MissionOS</span>
               </h1>
-              <span className="text-[9px] text-gray-500 font-mono uppercase tracking-widest">
+              <span className="text-[9px] text-[#67736b] font-sans uppercase tracking-widest font-semibold">
                 Declarative Life Runtime
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
-            {error && (
-              <span className="text-[10px] font-mono text-rose-400 bg-rose-500/10 border border-rose-500/25 px-2.5 py-1 rounded">
-                Sync Error
-              </span>
-            )}
-            <div className="flex items-center gap-1.5 text-[10px] font-mono text-cyan-400 bg-cyan-500/5 border border-cyan-500/10 px-2.5 py-1 rounded">
-              <CircleDot className="h-3 w-3 animate-pulse text-cyan-400" />
+            <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#7A8C74] bg-[#7A8C74]/5 border border-[#7A8C74]/15 px-2.5 py-1 rounded-full">
+              <CircleDot className="h-3 w-3 animate-pulse text-[#7A8C74]" />
               <span>Runtime Online</span>
             </div>
             <button
               onClick={() => fetchState()}
               disabled={isLoading}
-              className="p-1.5 rounded bg-gray-900 border border-gray-800 text-gray-400 hover:text-cyan-400 hover:border-cyan-500/30 disabled:opacity-50 transition-all cursor-pointer"
+              className="p-2 rounded-lg bg-[#FAF7F2] border border-[#e3dbcd] hover:border-[#d6cebf] text-[#67736b] hover:text-[#7A8C74] disabled:opacity-50 transition-all cursor-pointer shadow-sm"
             >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin text-cyan-400" : ""}`} />
+              <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin text-[#7A8C74]" : ""}`} />
             </button>
+            <div className="h-8 w-8 rounded-full bg-[#7A8C74]/20 border border-[#7A8C74]/40 flex items-center justify-center text-[#7A8C74] cursor-pointer">
+              <User className="h-4 w-4" />
+            </div>
           </div>
         </div>
       </header>
 
       {/* 2. Main content container */}
-      <main className="max-w-7xl mx-auto px-4 mt-6 grow flex flex-col gap-6 w-full">
-        {/* Command palette is always present at the top */}
-        <CommandPalette />
-
+      <main className="max-w-7xl mx-auto px-6 mt-6 grow flex flex-col gap-6 w-full">
         {/* Workspace Body */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
           {/* Navigation Sidebar Panel */}
-          <div className="lg:col-span-1 flex flex-col gap-6">
-            <div className="glass-panel p-4 rounded-xl border border-white/5 flex flex-col gap-4 shadow-sm">
-              <h2 className="text-[10px] font-mono uppercase tracking-widest text-gray-500 border-b border-gray-900 pb-2">
+          <div className="lg:col-span-1 flex flex-col gap-6 sticky top-20">
+            <div className="glass-panel p-4 rounded-2xl flex flex-col gap-5 shadow-sm bg-[#FAF7F2]">
+              <h2 className="text-[10px] font-mono uppercase tracking-widest text-[#67736b] font-bold border-b border-[#e3dbcd] pb-2">
                 Navigation
               </h2>
               <nav className="flex flex-col gap-1">
@@ -133,67 +131,80 @@ export default function Home() {
                       key={tab.id}
                       id={`nav-tab-${tab.id}`}
                       onClick={() => setActiveTab(tab.id)}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-mono transition-all border ${
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-sans transition-all border ${
                         isActive
-                          ? "bg-cyan-500/10 text-cyan-300 border-cyan-500/20 glow-cyan font-bold"
-                          : "text-gray-400 bg-transparent border-transparent hover:text-gray-200 hover:bg-white/2"
+                          ? "bg-[#7A8C74]/10 text-[#2c312e] border-[#7A8C74]/25 font-bold shadow-sm"
+                          : "text-[#67736b] bg-transparent border-transparent hover:text-[#2c312e] hover:bg-[#FAF7F2]/50"
                       }`}
                     >
-                      <Icon className={`h-4.5 w-4.5 ${isActive ? "text-cyan-400" : "text-gray-500"}`} />
+                      <Icon className={`h-4.5 w-4.5 ${isActive ? "text-[#7A8C74]" : "text-[#67736b]"}`} />
                       <span>{tab.label}</span>
                     </button>
                   );
                 })}
               </nav>
-            </div>
 
-            {/* Sidebar Stats Panel */}
-            <div className="glass-panel p-4 rounded-xl border border-white/5 flex flex-col gap-4 shadow-sm">
-              <div className="flex items-center gap-1.5 border-b border-gray-900 pb-2">
-                <Award className="h-4 w-4 text-cyan-400" />
-                <h2 className="text-[10px] font-mono uppercase tracking-widest text-gray-500">
-                  Commitment Stats
-                </h2>
+              {/* Sidebar Stats Panel */}
+              <div className="flex flex-col gap-3 pt-3 border-t border-[#e3dbcd]">
+                <div className="flex items-center gap-1.5 pb-1">
+                  <Award className="h-4 w-4 text-[#7A8C74]" />
+                  <h2 className="text-[9px] font-mono uppercase tracking-widest text-[#67736b] font-bold">
+                    Commitment Stats
+                  </h2>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="bg-[#FAF7F2] border border-[#e3dbcd] p-2 rounded-xl flex flex-col">
+                    <span className="text-sm font-mono font-bold text-[#2c312e]">
+                      {stats.responsibilities}
+                    </span>
+                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">
+                      Domains
+                    </span>
+                  </div>
+                  <div className="bg-[#FAF7F2] border border-[#e3dbcd] p-2 rounded-xl flex flex-col">
+                    <span className="text-sm font-mono font-bold text-[#2c312e]">
+                      {stats.projects}
+                    </span>
+                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">
+                      Projects
+                    </span>
+                  </div>
+                  <div className="bg-[#FAF7F2] border border-[#e3dbcd] p-2 rounded-xl flex flex-col">
+                    <span className="text-sm font-mono font-bold text-[#2c312e]">
+                      {stats.goals}
+                    </span>
+                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">
+                      Goals
+                    </span>
+                  </div>
+                  <div className="bg-[#FAF7F2] border border-[#e3dbcd] p-2 rounded-xl flex flex-col">
+                    <span className="text-sm font-mono font-bold text-[#2c312e]">
+                      {stats.tasks}
+                    </span>
+                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">
+                      Tasks
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-black/30 border border-gray-900 p-2.5 rounded-lg flex flex-col">
-                  <span className="text-lg font-mono font-bold text-gray-100">
-                    {stats.responsibilities}
-                  </span>
-                  <span className="text-[9px] text-gray-500 font-mono uppercase tracking-wide">
-                    Domains
-                  </span>
-                </div>
-                <div className="bg-black/30 border border-gray-900 p-2.5 rounded-lg flex flex-col">
-                  <span className="text-lg font-mono font-bold text-gray-100">
-                    {stats.projects}
-                  </span>
-                  <span className="text-[9px] text-gray-500 font-mono uppercase tracking-wide">
-                    Projects
-                  </span>
-                </div>
-                <div className="bg-black/30 border border-gray-900 p-2.5 rounded-lg flex flex-col">
-                  <span className="text-lg font-mono font-bold text-gray-100">
-                    {stats.goals}
-                  </span>
-                  <span className="text-[9px] text-gray-500 font-mono uppercase tracking-wide">
-                    Goals
-                  </span>
-                </div>
-                <div className="bg-black/30 border border-gray-900 p-2.5 rounded-lg flex flex-col">
-                  <span className="text-lg font-mono font-bold text-gray-100">
-                    {stats.tasks}
-                  </span>
-                  <span className="text-[9px] text-gray-500 font-mono uppercase tracking-wide">
-                    Tasks
-                  </span>
-                </div>
+
+              {/* Support Links in Sidebar */}
+              <div className="flex flex-col gap-1 pt-3 border-t border-[#e3dbcd] text-[10px] font-mono text-[#67736b]">
+                <button className="flex items-center gap-2 px-2 py-1.5 hover:text-[#7A8C74] text-left transition-colors">
+                  <Settings className="h-3.5 w-3.5" />
+                  <span>Settings</span>
+                </button>
+                <button className="flex items-center gap-2 px-2 py-1.5 hover:text-[#7A8C74] text-left transition-colors">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  <span>Support</span>
+                </button>
               </div>
             </div>
           </div>
 
           {/* Central Active View Workspace */}
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-3 flex flex-col gap-6">
+            <CommandPalette />
             <ActiveComponent />
           </div>
         </div>
