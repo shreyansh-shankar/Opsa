@@ -2,6 +2,7 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
+import uuid
 from backend.models.models import (
     Responsibility, Project, Goal, Task, Relationship, Event
 )

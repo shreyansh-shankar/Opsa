@@ -66,6 +66,55 @@ class TestParser(unittest.TestCase):
         self.assertEqual(cmd["target"], "Launch")
         self.assertTrue(cmd["is_query"])
 
+    def test_spaces_in_names(self):
+        # CREATE unquoted with spaces
+        cmd = parse_line("CREATE RESPONSIBILITY The Last Deploy")
+        self.assertEqual(cmd["operation"], "CREATE_RESPONSIBILITY")
+        self.assertEqual(cmd["name"], "The Last Deploy")
+        self.assertIsNone(cmd["parent"])
+
+        cmd = parse_line("CREATE PROJECT Product Engineering UNDER The Last Deploy")
+        self.assertEqual(cmd["operation"], "CREATE_PROJECT")
+        self.assertEqual(cmd["name"], "Product Engineering")
+        self.assertEqual(cmd["parent"], "The Last Deploy")
+
+        # UPDATE with spaces
+        cmd = parse_line("UPDATE The Last Deploy SET priority = HIGH")
+        self.assertEqual(cmd["operation"], "UPDATE")
+        self.assertEqual(cmd["target"], "The Last Deploy")
+        self.assertEqual(cmd["updates"], {"priority": "HIGH"})
+
+        # DEFER with spaces
+        cmd = parse_line("DEFER Product Engineering UNTIL LinuxTrack.Completed")
+        self.assertEqual(cmd["operation"], "DEFER")
+        self.assertEqual(cmd["target"], "Product Engineering")
+        self.assertEqual(cmd["until"], "LinuxTrack.Completed")
+
+        # BLOCK with spaces
+        cmd = parse_line("BLOCK Product Engineering BY Backend Dev")
+        self.assertEqual(cmd["operation"], "BLOCK")
+        self.assertEqual(cmd["target"], "Product Engineering")
+        self.assertEqual(cmd["blocker"], "Backend Dev")
+
+        # LINK with spaces
+        cmd = parse_line("LINK Product Engineering TO The Last Deploy AS depends_on")
+        self.assertEqual(cmd["operation"], "LINK")
+        self.assertEqual(cmd["source"], "Product Engineering")
+        self.assertEqual(cmd["target"], "The Last Deploy")
+        self.assertEqual(cmd["type"], "depends_on")
+
+        # SPLIT with spaces
+        cmd = parse_line("SPLIT Product Engineering INTO Frontend Goal, Backend Goal")
+        self.assertEqual(cmd["operation"], "SPLIT")
+        self.assertEqual(cmd["target"], "Product Engineering")
+        self.assertEqual(cmd["names"], ["Frontend Goal", "Backend Goal"])
+
+        # MERGE with spaces
+        cmd = parse_line("MERGE Frontend Goal, Backend Goal INTO Product Engineering")
+        self.assertEqual(cmd["operation"], "MERGE")
+        self.assertEqual(cmd["sources"], ["Frontend Goal", "Backend Goal"])
+        self.assertEqual(cmd["target"], "Product Engineering")
+
     def test_script_parsing(self):
         script = """
         BEGIN TRANSACTION

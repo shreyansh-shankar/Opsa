@@ -41,18 +41,28 @@ def parse_line(line: str) -> Dict[str, Any]:
         if entity_type not in ["RESPONSIBILITY", "PROJECT", "GOAL", "TASK"]:
             raise ParseError(f"Unknown entity type: {entity_type}")
         
-        name = tokens[2]
-        parent = None
-
-        # Check for UNDER
-        if len(tokens) > 3:
-            if tokens[3].upper() != "UNDER":
-                raise ParseError(f"Expected 'UNDER' in CREATE command, got '{tokens[3]}'")
-            if len(tokens) < 5:
+        # Scan for UNDER
+        under_idx = -1
+        for i in range(2, len(tokens)):
+            if tokens[i].upper() == "UNDER":
+                under_idx = i
+                break
+        
+        if under_idx != -1:
+            name_tokens = tokens[2:under_idx]
+            parent_tokens = tokens[under_idx+1:]
+            if not name_tokens:
+                raise ParseError("CREATE command requires a name before UNDER.")
+            if not parent_tokens:
                 raise ParseError("UNDER requires a parent entity name.")
-            parent = tokens[4]
-            if len(tokens) > 5:
-                raise ParseError(f"Extra tokens at end of CREATE command: {' '.join(tokens[5:])}")
+            name = " ".join(name_tokens)
+            parent = " ".join(parent_tokens)
+        else:
+            name_tokens = tokens[2:]
+            if not name_tokens:
+                raise ParseError("CREATE command requires a name.")
+            name = " ".join(name_tokens)
+            parent = None
 
         return {
             "operation": f"CREATE_{entity_type}",
@@ -63,13 +73,20 @@ def parse_line(line: str) -> Dict[str, Any]:
 
     # UPDATE
     elif first_token == "UPDATE":
-        if len(tokens) < 6 or tokens[2].upper() != "SET":
+        set_idx = -1
+        for i in range(1, len(tokens)):
+            if tokens[i].upper() == "SET":
+                set_idx = i
+                break
+        
+        if set_idx == -1 or set_idx < 2:
             raise ParseError("UPDATE syntax: UPDATE <target> SET <field> = <value> [, <field2> = <value2> ...]")
-        target = tokens[1]
+        
+        target = " ".join(tokens[1:set_idx])
         
         # Parse set pairs
         updates = {}
-        idx = 3
+        idx = set_idx + 1
         while idx < len(tokens):
             field = tokens[idx]
             if idx + 2 >= len(tokens) or tokens[idx+1] != "=":
@@ -95,75 +112,87 @@ def parse_line(line: str) -> Dict[str, Any]:
     elif first_token == "COMPLETE":
         if len(tokens) < 2:
             raise ParseError("COMPLETE command requires a target.")
-        if len(tokens) > 2:
-            raise ParseError(f"Extra tokens at end of COMPLETE command: {' '.join(tokens[2:])}")
-        return {"operation": "COMPLETE", "target": tokens[1], "raw": line_clean}
+        target = " ".join(tokens[1:])
+        return {"operation": "COMPLETE", "target": target, "raw": line_clean}
 
     # DELETE
     elif first_token == "DELETE":
         if len(tokens) < 2:
             raise ParseError("DELETE command requires a target.")
-        if len(tokens) > 2:
-            raise ParseError(f"Extra tokens at end of DELETE command: {' '.join(tokens[2:])}")
-        return {"operation": "DELETE", "target": tokens[1], "raw": line_clean}
+        target = " ".join(tokens[1:])
+        return {"operation": "DELETE", "target": target, "raw": line_clean}
 
     # ARCHIVE
     elif first_token == "ARCHIVE":
         if len(tokens) < 2:
             raise ParseError("ARCHIVE command requires a target.")
-        if len(tokens) > 2:
-            raise ParseError(f"Extra tokens at end of ARCHIVE command: {' '.join(tokens[2:])}")
-        return {"operation": "ARCHIVE", "target": tokens[1], "raw": line_clean}
+        target = " ".join(tokens[1:])
+        return {"operation": "ARCHIVE", "target": target, "raw": line_clean}
 
     # RESTORE
     elif first_token == "RESTORE":
         if len(tokens) < 2:
             raise ParseError("RESTORE command requires a target.")
-        if len(tokens) > 2:
-            raise ParseError(f"Extra tokens at end of RESTORE command: {' '.join(tokens[2:])}")
-        return {"operation": "RESTORE", "target": tokens[1], "raw": line_clean}
+        target = " ".join(tokens[1:])
+        return {"operation": "RESTORE", "target": target, "raw": line_clean}
 
     # PROMOTE
     elif first_token == "PROMOTE":
         if len(tokens) < 2:
             raise ParseError("PROMOTE command requires a target.")
-        if len(tokens) > 2:
-            raise ParseError(f"Extra tokens at end of PROMOTE command: {' '.join(tokens[2:])}")
-        return {"operation": "PROMOTE", "target": tokens[1], "raw": line_clean}
+        target = " ".join(tokens[1:])
+        return {"operation": "PROMOTE", "target": target, "raw": line_clean}
 
     # DEMOTE
     elif first_token == "DEMOTE":
         if len(tokens) < 2:
             raise ParseError("DEMOTE command requires a target.")
-        if len(tokens) > 2:
-            raise ParseError(f"Extra tokens at end of DEMOTE command: {' '.join(tokens[2:])}")
-        return {"operation": "DEMOTE", "target": tokens[1], "raw": line_clean}
+        target = " ".join(tokens[1:])
+        return {"operation": "DEMOTE", "target": target, "raw": line_clean}
 
     # DEFER
     elif first_token == "DEFER":
         # DEFER <target> UNTIL <value>
-        if len(tokens) < 4 or tokens[2].upper() != "UNTIL":
+        until_idx = -1
+        for i in range(1, len(tokens)):
+            if tokens[i].upper() == "UNTIL":
+                until_idx = i
+                break
+        if until_idx == -1 or until_idx < 2:
             raise ParseError("DEFER syntax: DEFER <target> UNTIL <timestamp or condition>")
-        if len(tokens) > 4:
-            raise ParseError(f"Extra tokens at end of DEFER command: {' '.join(tokens[4:])}")
+        
+        target = " ".join(tokens[1:until_idx])
+        until = " ".join(tokens[until_idx+1:])
+        if not until:
+            raise ParseError("DEFER command requires a target value after UNTIL.")
+        
         return {
             "operation": "DEFER",
-            "target": tokens[1],
-            "until": tokens[3],
+            "target": target,
+            "until": until,
             "raw": line_clean
         }
 
     # BLOCK
     elif first_token == "BLOCK":
         # BLOCK <target> WITH/BY <blocker>
-        if len(tokens) < 4 or tokens[2].upper() not in ["WITH", "BY"]:
+        delim_idx = -1
+        for i in range(1, len(tokens)):
+            if tokens[i].upper() in ["WITH", "BY"]:
+                delim_idx = i
+                break
+        if delim_idx == -1 or delim_idx < 2:
             raise ParseError("BLOCK syntax: BLOCK <target> WITH/BY <blocker>")
-        if len(tokens) > 4:
-            raise ParseError(f"Extra tokens at end of BLOCK command: {' '.join(tokens[4:])}")
+        
+        target = " ".join(tokens[1:delim_idx])
+        blocker = " ".join(tokens[delim_idx+1:])
+        if not blocker:
+            raise ParseError("BLOCK command requires a blocker after WITH/BY.")
+        
         return {
             "operation": "BLOCK",
-            "target": tokens[1],
-            "blocker": tokens[3],
+            "target": target,
+            "blocker": blocker,
             "raw": line_clean
         }
 
@@ -171,73 +200,112 @@ def parse_line(line: str) -> Dict[str, Any]:
     elif first_token == "UNBLOCK":
         if len(tokens) < 2:
             raise ParseError("UNBLOCK command requires a target.")
-        if len(tokens) > 2:
-            raise ParseError(f"Extra tokens at end of UNBLOCK command: {' '.join(tokens[2:])}")
-        return {"operation": "UNBLOCK", "target": tokens[1], "raw": line_clean}
+        target = " ".join(tokens[1:])
+        return {"operation": "UNBLOCK", "target": target, "raw": line_clean}
 
     # LINK
     elif first_token == "LINK":
         # LINK <source> TO <target> AS <type>
-        if len(tokens) < 6 or tokens[2].upper() != "TO" or tokens[4].upper() != "AS":
+        to_idx = -1
+        as_idx = -1
+        for i in range(1, len(tokens)):
+            if tokens[i].upper() == "TO" and to_idx == -1:
+                to_idx = i
+            elif tokens[i].upper() == "AS" and as_idx == -1:
+                as_idx = i
+        
+        if to_idx == -1 or as_idx == -1 or to_idx < 2 or as_idx <= to_idx + 1 or as_idx + 1 >= len(tokens):
             raise ParseError("LINK syntax: LINK <source> TO <target> AS <relationship_type>")
-        if len(tokens) > 6:
-            raise ParseError(f"Extra tokens at end of LINK command: {' '.join(tokens[6:])}")
+        
+        source = " ".join(tokens[1:to_idx])
+        target = " ".join(tokens[to_idx+1:as_idx])
+        relationship_type = " ".join(tokens[as_idx+1:]).lower()
+        
         return {
             "operation": "LINK",
-            "source": tokens[1],
-            "target": tokens[3],
-            "type": tokens[5].lower(),
+            "source": source,
+            "target": target,
+            "type": relationship_type,
             "raw": line_clean
         }
 
     # UNLINK
     elif first_token == "UNLINK":
         # UNLINK <source> FROM <target>
-        if len(tokens) < 4 or tokens[2].upper() != "FROM":
+        from_idx = -1
+        for i in range(1, len(tokens)):
+            if tokens[i].upper() == "FROM":
+                from_idx = i
+                break
+        if from_idx == -1 or from_idx < 2 or from_idx + 1 >= len(tokens):
             raise ParseError("UNLINK syntax: UNLINK <source> FROM <target>")
-        if len(tokens) > 4:
-            raise ParseError(f"Extra tokens at end of UNLINK command: {' '.join(tokens[4:])}")
+        
+        source = " ".join(tokens[1:from_idx])
+        target = " ".join(tokens[from_idx+1:])
+        
         return {
             "operation": "UNLINK",
-            "source": tokens[1],
-            "target": tokens[3],
+            "source": source,
+            "target": target,
             "raw": line_clean
         }
 
     # MOVE
     elif first_token == "MOVE":
         # MOVE <target> UNDER <parent>
-        if len(tokens) < 4 or tokens[2].upper() != "UNDER":
+        under_idx = -1
+        for i in range(1, len(tokens)):
+            if tokens[i].upper() == "UNDER":
+                under_idx = i
+                break
+        if under_idx == -1 or under_idx < 2 or under_idx + 1 >= len(tokens):
             raise ParseError("MOVE syntax: MOVE <target> UNDER <new_parent>")
-        if len(tokens) > 4:
-            raise ParseError(f"Extra tokens at end of MOVE command: {' '.join(tokens[4:])}")
+        
+        target = " ".join(tokens[1:under_idx])
+        parent = " ".join(tokens[under_idx+1:])
+        
         return {
             "operation": "MOVE",
-            "target": tokens[1],
-            "parent": tokens[3],
+            "target": target,
+            "parent": parent,
             "raw": line_clean
         }
 
     # SPLIT
     elif first_token == "SPLIT":
         # SPLIT <target> INTO <name1> , <name2> ...
-        if len(tokens) < 4 or tokens[2].upper() != "INTO":
+        into_idx = -1
+        for i in range(1, len(tokens)):
+            if tokens[i].upper() == "INTO":
+                into_idx = i
+                break
+        if into_idx == -1 or into_idx < 2 or into_idx + 1 >= len(tokens):
             raise ParseError("SPLIT syntax: SPLIT <target> INTO <name1>, <name2> ...")
-        target = tokens[1]
         
-        # Parse comma-separated names
+        target = " ".join(tokens[1:into_idx])
+        
+        # Parse names separated by commas
         names = []
-        idx = 3
-        while idx < len(tokens):
-            names.append(tokens[idx])
-            idx += 1
-            if idx < len(tokens):
-                if tokens[idx] == ",":
-                    idx += 1
-                else:
-                    raise ParseError(f"Expected ',' between split names, got '{tokens[idx]}'")
+        current_name_tokens = []
+        for i in range(into_idx + 1, len(tokens)):
+            t = tokens[i]
+            if t == ",":
+                name = " ".join(current_name_tokens).strip()
+                if not name:
+                    raise ParseError("Empty name in SPLIT list.")
+                names.append(name)
+                current_name_tokens = []
+            else:
+                current_name_tokens.append(t)
+        
+        if current_name_tokens:
+            name = " ".join(current_name_tokens).strip()
+            if name:
+                names.append(name)
+        
         if not names:
             raise ParseError("SPLIT requires at least one target name in the INTO clause.")
+            
         return {
             "operation": "SPLIT",
             "target": target,
@@ -248,36 +316,43 @@ def parse_line(line: str) -> Dict[str, Any]:
     # MERGE
     elif first_token == "MERGE":
         # MERGE <name1> , <name2> INTO <new_name>
-        if len(tokens) < 5:
-            raise ParseError("MERGE syntax: MERGE <name1>, <name2> INTO <new_name>")
-        
-        # Parse comma-separated names until INTO
-        names = []
-        idx = 1
-        into_found = False
-        while idx < len(tokens):
-            if tokens[idx].upper() == "INTO":
-                into_found = True
-                idx += 1
+        into_idx = -1
+        for i in range(1, len(tokens)):
+            if tokens[i].upper() == "INTO":
+                into_idx = i
                 break
-            names.append(tokens[idx])
-            idx += 1
-            if idx < len(tokens) and tokens[idx].upper() != "INTO":
-                if tokens[idx] == ",":
-                    idx += 1
-                else:
-                    raise ParseError(f"Expected ',' between merge names, got '{tokens[idx]}'")
+        if into_idx == -1 or into_idx < 4 or into_idx + 1 >= len(tokens):
+            raise ParseError("MERGE syntax: MERGE <name1>, <name2> ... INTO <new_name>")
         
-        if not into_found or idx >= len(tokens):
-            raise ParseError("Expected 'INTO <new_name>' in MERGE command.")
+        # Parse source names separated by commas
+        sources = []
+        current_name_tokens = []
+        for i in range(1, into_idx):
+            t = tokens[i]
+            if t == ",":
+                name = " ".join(current_name_tokens).strip()
+                if not name:
+                    raise ParseError("Empty name in MERGE list.")
+                sources.append(name)
+                current_name_tokens = []
+            else:
+                current_name_tokens.append(t)
         
-        new_name = tokens[idx]
-        if idx + 1 < len(tokens):
-            raise ParseError(f"Extra tokens at end of MERGE command: {' '.join(tokens[idx+1:])}")
+        if current_name_tokens:
+            name = " ".join(current_name_tokens).strip()
+            if name:
+                sources.append(name)
+                
+        if len(sources) < 2:
+            raise ParseError("MERGE requires at least two source entities.")
+            
+        new_name = " ".join(tokens[into_idx+1:])
+        if not new_name:
+            raise ParseError("MERGE requires a target name after INTO.")
             
         return {
             "operation": "MERGE",
-            "sources": names,
+            "sources": sources,
             "target": new_name,
             "raw": line_clean
         }
@@ -305,11 +380,10 @@ def parse_line(line: str) -> Dict[str, Any]:
     elif first_token == "WHY":
         if len(tokens) < 3 or tokens[1].upper() != "BLOCKED":
             raise ParseError("WHY query syntax: WHY BLOCKED <target>")
-        if len(tokens) > 3:
-            raise ParseError(f"Extra tokens at end of WHY query: {' '.join(tokens[3:])}")
+        target = " ".join(tokens[2:])
         return {
             "operation": "WHY_BLOCKED",
-            "target": tokens[2],
+            "target": target,
             "is_query": True,
             "raw": line_clean
         }
