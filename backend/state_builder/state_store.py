@@ -7,6 +7,16 @@ from backend.models.models import (
     Responsibility, Project, Goal, Task, Relationship, Event
 )
 
+def parse_datetime(dt_str: Optional[str]) -> Optional[datetime]:
+    if not dt_str or dt_str.lower() == "null":
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(dt_str.strip(), fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    return None
+
 def slugify(name: str) -> str:
     s = name.strip().lower()
     s = re.sub(r'[^a-z0-9\-_]', '-', s)
@@ -76,7 +86,9 @@ class StateStore:
                 "parent_slug": slugify(payload.get("parent", "")),
                 "priority": "MEDIUM",
                 "deferred_until": None,
-                "deferred_condition": None
+                "deferred_condition": None,
+                "scheduled_from": None,
+                "scheduled_to": None
             }
 
         elif op == "CREATE_TASK":
@@ -92,7 +104,9 @@ class StateStore:
                 "parent_slug": slugify(payload.get("parent", "")) if payload.get("parent") else None,
                 "priority": "MEDIUM",
                 "deferred_until": None,
-                "deferred_condition": None
+                "deferred_condition": None,
+                "scheduled_from": None,
+                "scheduled_to": None
             }
 
         elif op == "UPDATE":
@@ -130,6 +144,10 @@ class StateStore:
                     entity["deferred_until"] = val
                 elif key == "deferred_condition":
                     entity["deferred_condition"] = val
+                elif key == "scheduled_from":
+                    entity["scheduled_from"] = None if (not val or val.lower() == "null") else val
+                elif key == "scheduled_to":
+                    entity["scheduled_to"] = None if (not val or val.lower() == "null") else val
 
         elif op == "COMPLETE":
             entity = self.entities.get(target_slug)
@@ -257,6 +275,12 @@ class StateStore:
             if entity:
                 entity["parent_slug"] = slugify(payload.get("parent", ""))
 
+        elif op == "SCHEDULE":
+            entity = self.entities.get(target_slug)
+            if entity:
+                entity["scheduled_from"] = None if (not payload.get("scheduled_from") or payload.get("scheduled_from").lower() == "null") else payload.get("scheduled_from")
+                entity["scheduled_to"] = None if (not payload.get("scheduled_to") or payload.get("scheduled_to").lower() == "null") else payload.get("scheduled_to")
+
         elif op == "SPLIT":
             entity = self.entities.get(target_slug)
             if not entity:
@@ -282,7 +306,9 @@ class StateStore:
                     "parent_slug": parent_slug,
                     "priority": entity.get("priority", "MEDIUM"),
                     "deferred_until": None,
-                    "deferred_condition": None
+                    "deferred_condition": None,
+                    "scheduled_from": None,
+                    "scheduled_to": None
                 }
                 # Copy relationships (if A was blocked or blocked others, copy to new split items)
                 for rel in list(self.relationships):
@@ -337,7 +363,9 @@ class StateStore:
                 "parent_slug": parent_slug,
                 "priority": priority,
                 "deferred_until": None,
-                "deferred_condition": None
+                "deferred_condition": None,
+                "scheduled_from": None,
+                "scheduled_to": None
             }
 
             # Map relationships from sources to new target
@@ -473,7 +501,9 @@ class StateStore:
                     project_id=parent_p.id if parent_p else None,
                     name=entity["name"],
                     slug=entity["slug"],
-                    status=entity["status"]
+                    status=entity["status"],
+                    scheduled_from=parse_datetime(entity.get("scheduled_from")),
+                    scheduled_to=parse_datetime(entity.get("scheduled_to"))
                 )
                 db.add(g)
                 goal_map[slug] = g
@@ -518,6 +548,8 @@ class StateStore:
                     status=entity["status"],
                     deferred_until=def_until,
                     deferred_condition=entity.get("deferred_condition"),
+                    scheduled_from=parse_datetime(entity.get("scheduled_from")),
+                    scheduled_to=parse_datetime(entity.get("scheduled_to")),
                     priority=entity.get("priority", "MEDIUM")
                 )
                 db.add(t)

@@ -50,6 +50,8 @@ class Goal(Base):
     name = Column(String, nullable=False)
     slug = Column(String, unique=True, index=True, nullable=False)
     status = Column(String, default="NOT_STARTED")  # NOT_STARTED | ACTIVE | COMPLETED | ARCHIVED | DELETED | PAUSED
+    scheduled_from = Column(DateTime, nullable=True)
+    scheduled_to = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -65,6 +67,8 @@ class Task(Base):
     status = Column(String, default="NOT_STARTED")  # NOT_STARTED | ACTIVE | COMPLETED | DEFERRED | BLOCKED | ARCHIVED | DELETED | PAUSED
     deferred_until = Column(DateTime, nullable=True)
     deferred_condition = Column(String, nullable=True)
+    scheduled_from = Column(DateTime, nullable=True)
+    scheduled_to = Column(DateTime, nullable=True)
     priority = Column(String, default="MEDIUM")  # LOW | MEDIUM | HIGH | URGENT
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

@@ -10,6 +10,7 @@ import DependencyGraph from "@/components/DependencyGraph";
 import TimelineView from "@/components/TimelineView";
 import ConsoleView from "@/components/ConsoleView";
 import ReferenceView from "@/components/ReferenceView";
+import CalendarView from "@/components/CalendarView";
 
 import {
   Compass,
@@ -24,7 +25,8 @@ import {
   Settings,
   ShieldCheck,
   User,
-  Target
+  Target,
+  Calendar
 } from "lucide-react";
 
 export default function Home() {
@@ -68,6 +70,7 @@ export default function Home() {
   const tabs = [
     { id: "mission", label: "Mission Overview", icon: Compass, component: MissionView },
     { id: "goals", label: "Goals Tracker", icon: Target, component: GoalView },
+    { id: "calendar", label: "Calendar Schedule", icon: Calendar, component: CalendarView },
     { id: "responsibility", label: "Commit Tree", icon: Layers, component: ResponsibilityView },
     { id: "graph", label: "Dependency Network", icon: Network, component: DependencyGraph },
     { id: "timeline", label: "Operation Timeline", icon: GitBranch, component: TimelineView },

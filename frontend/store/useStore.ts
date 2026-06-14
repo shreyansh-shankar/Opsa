@@ -9,6 +9,8 @@ export interface StateNode {
   priority?: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
   deferred_until?: string | null;
   deferred_condition?: string | null;
+  scheduled_from?: string | null;
+  scheduled_to?: string | null;
   projects?: StateNode[];
   goals?: StateNode[];
   tasks?: StateNode[];
@@ -57,7 +59,7 @@ export interface ConsoleLog {
 }
 
 interface AppState {
-  activeTab: "mission" | "goals" | "responsibility" | "graph" | "timeline" | "console" | "reference";
+  activeTab: "mission" | "goals" | "responsibility" | "graph" | "timeline" | "console" | "reference" | "calendar";
   stateTree: StateTree | null;
   timeline: TimelineEvent[];
   graph: GraphData | null;

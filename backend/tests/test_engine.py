@@ -157,5 +157,48 @@ class TestEngine(unittest.TestCase):
         task_a = self.db.query(Task).filter_by(slug="taska").first()
         self.assertEqual(task_a.status, "ACTIVE")
 
+    def test_schedule_commands(self):
+        execute_transaction_script(self.db, "CREATE RESPONSIBILITY T1")
+        execute_transaction_script(self.db, "CREATE PROJECT P1 UNDER T1")
+        execute_transaction_script(self.db, "CREATE GOAL G1 UNDER P1")
+        execute_transaction_script(self.db, "CREATE TASK TaskA UNDER G1")
+
+        # Schedule Goal
+        res = execute_transaction_script(self.db, "SCHEDULE G1 FROM 2026-06-15 09:00:00 TO 2026-06-15 18:00:00")
+        self.assertEqual(res["status"], "SUCCESS")
+        g1 = self.db.query(Goal).filter_by(slug="g1").first()
+        self.assertIsNotNone(g1.scheduled_from)
+        self.assertEqual(g1.scheduled_from.strftime("%Y-%m-%d %H:%M:%S"), "2026-06-15 09:00:00")
+
+        # Schedule Task with simple date
+        execute_transaction_script(self.db, "SCHEDULE TaskA FROM 2026-06-16 TO 2026-06-17")
+        task_a = self.db.query(Task).filter_by(slug="taska").first()
+        self.assertEqual(task_a.scheduled_from.strftime("%Y-%m-%d"), "2026-06-16")
+        self.assertEqual(task_a.scheduled_to.strftime("%Y-%m-%d"), "2026-06-17")
+
+        # Update schedule with UPDATE command
+        execute_transaction_script(self.db, "UPDATE TaskA SET scheduled_from = 2026-06-15")
+        task_a = self.db.query(Task).filter_by(slug="taska").first()
+        self.assertEqual(task_a.scheduled_from.strftime("%Y-%m-%d"), "2026-06-15")
+        self.assertEqual(task_a.scheduled_to.strftime("%Y-%m-%d"), "2026-06-17")
+
+        # Clear schedule
+        execute_transaction_script(self.db, "SCHEDULE TaskA FROM null TO null")
+        task_a = self.db.query(Task).filter_by(slug="taska").first()
+        self.assertIsNone(task_a.scheduled_from)
+        self.assertIsNone(task_a.scheduled_to)
+
+        # Invalid target for SCHEDULE (responsibility)
+        with self.assertRaises(ValidationError):
+            execute_transaction_script(self.db, "SCHEDULE T1 FROM 2026-06-15 TO 2026-06-16")
+
+        # Invalid datetime format
+        with self.assertRaises(ValidationError):
+            execute_transaction_script(self.db, "SCHEDULE G1 FROM invalid_date TO 2026-06-16")
+
+        # Start datetime after end datetime
+        with self.assertRaises(ValidationError):
+            execute_transaction_script(self.db, "SCHEDULE G1 FROM 2026-06-17 TO 2026-06-16")
+
 if __name__ == "__main__":
     unittest.main()

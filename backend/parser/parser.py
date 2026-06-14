@@ -285,6 +285,32 @@ def parse_line(line: str) -> Dict[str, Any]:
             "raw": line_clean
         }
 
+    # SCHEDULE
+    elif first_token == "SCHEDULE":
+        # SCHEDULE <target> FROM <start> TO <end>
+        from_idx = -1
+        to_idx = -1
+        for i in range(1, len(tokens)):
+            if tokens[i].upper() == "FROM" and from_idx == -1:
+                from_idx = i
+            elif tokens[i].upper() == "TO" and to_idx == -1:
+                to_idx = i
+        
+        if from_idx == -1 or to_idx == -1 or from_idx < 2 or to_idx <= from_idx + 1 or to_idx + 1 >= len(tokens):
+            raise ParseError("SCHEDULE syntax: SCHEDULE <target> FROM <start_datetime> TO <end_datetime>")
+        
+        target = " ".join(tokens[1:from_idx])
+        start = " ".join(tokens[from_idx+1:to_idx])
+        end = " ".join(tokens[to_idx+1:])
+        
+        return {
+            "operation": "SCHEDULE",
+            "target": target,
+            "scheduled_from": start,
+            "scheduled_to": end,
+            "raw": line_clean
+        }
+
     # SPLIT
     elif first_token == "SPLIT":
         # SPLIT <target> INTO <name1> , <name2> ...

@@ -112,6 +112,12 @@ export default function ReferenceView() {
           notes: "Once the condition is completed (or calendar date passes), the task becomes ACTIVE."
         },
         {
+          cmd: "SCHEDULE <target> FROM <start_datetime> TO <end_datetime>",
+          desc: "Schedules a Goal or Task for a specific date/time range. Supported formats: YYYY-MM-DD HH:MM:SS, YYYY-MM-DD HH:MM, YYYY-MM-DD.",
+          example: "SCHEDULE Launch FROM 2026-06-15 09:00 TO 2026-06-15 18:00",
+          notes: "To clear schedule, run: SCHEDULE <target> FROM null TO null"
+        },
+        {
           cmd: "LINK <source> TO <target> AS <type>",
           desc: "Creates a custom directional link relationship (types: depends_on, blocks, related_to, linked_to).",
           example: "LINK module1 TO module2 AS related_to"

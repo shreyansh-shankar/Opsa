@@ -99,6 +99,28 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
                         curr_ent = state.get_entity(curr)
                         curr = curr_ent.get("parent_slug") if curr_ent else None
 
+        # Verify types and values for scheduled fields if updated
+        if "scheduled_from" in updates or "scheduled_to" in updates:
+            if target_ent["type"] not in ["GOAL", "TASK"]:
+                raise ValidationError("Only Goals and Tasks can be scheduled.")
+            
+            from backend.state_builder.state_store import parse_datetime
+            
+            # Use current state values as fallback
+            start_str = updates.get("scheduled_from", target_ent.get("scheduled_from"))
+            end_str = updates.get("scheduled_to", target_ent.get("scheduled_to"))
+            
+            start_dt = parse_datetime(start_str)
+            end_dt = parse_datetime(end_str)
+            
+            if start_str and start_str.lower() != "null" and not start_dt:
+                raise ValidationError(f"Invalid start datetime format: '{start_str}'")
+            if end_str and end_str.lower() != "null" and not end_dt:
+                raise ValidationError(f"Invalid end datetime format: '{end_str}'")
+                
+            if start_dt and end_dt and start_dt > end_dt:
+                raise ValidationError(f"Start datetime '{start_str}' must be before or equal to end datetime '{end_str}'")
+
     elif op in ["COMPLETE", "DELETE", "ARCHIVE", "RESTORE", "PROMOTE", "DEMOTE", "UNBLOCK", "PAUSE", "START"]:
         target = cmd["target"]
         target_ent = state.get_entity(target)
@@ -211,6 +233,30 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
         if state.get_entity(tgt_slug) and tgt_slug not in [slugify(s) for s in sources]:
             raise ValidationError(f"Target entity '{target}' already exists.")
 
+    elif op == "SCHEDULE":
+        target = cmd["target"]
+        target_ent = state.get_entity(target)
+        if not target_ent:
+            raise ValidationError(f"Target entity '{target}' does not exist.")
+        if target_ent["type"] not in ["GOAL", "TASK"]:
+            raise ValidationError("Only Goals and Tasks can be scheduled.")
+        
+        start_str = cmd.get("scheduled_from")
+        end_str = cmd.get("scheduled_to")
+        
+        from backend.state_builder.state_store import parse_datetime
+        
+        start_dt = parse_datetime(start_str)
+        end_dt = parse_datetime(end_str)
+        
+        if start_str and start_str.lower() != "null" and not start_dt:
+            raise ValidationError(f"Invalid start datetime format: '{start_str}'")
+        if end_str and end_str.lower() != "null" and not end_dt:
+            raise ValidationError(f"Invalid end datetime format: '{end_str}'")
+            
+        if start_dt and end_dt and start_dt > end_dt:
+            raise ValidationError(f"Start datetime '{start_str}' must be before or equal to end datetime '{end_str}'")
+
 def execute_command_string(db: Session, cmd_str: str) -> Dict[str, Any]:
     """
     Parses and executes a single command. Commits event directly.
@@ -272,6 +318,8 @@ def execute_transaction_script(db: Session, script_text: str) -> Dict[str, Any]:
             if "sources" in cmd: payload["sources"] = cmd["sources"]
             if "id" in cmd: payload["id"] = cmd["id"]
             if "ids" in cmd: payload["ids"] = cmd["ids"]
+            if "scheduled_from" in cmd: payload["scheduled_from"] = cmd["scheduled_from"]
+            if "scheduled_to" in cmd: payload["scheduled_to"] = cmd["scheduled_to"]
             
             simulated_state.apply_event(cmd["operation"], target, payload)
             simulated_state.compute_derived_states()
@@ -303,6 +351,8 @@ def execute_transaction_script(db: Session, script_text: str) -> Dict[str, Any]:
             if "sources" in cmd: payload["sources"] = cmd["sources"]
             if "id" in cmd: payload["id"] = cmd["id"]
             if "ids" in cmd: payload["ids"] = cmd["ids"]
+            if "scheduled_from" in cmd: payload["scheduled_from"] = cmd["scheduled_from"]
+            if "scheduled_to" in cmd: payload["scheduled_to"] = cmd["scheduled_to"]
 
             event = Event(
                 transaction_id=txn_id,

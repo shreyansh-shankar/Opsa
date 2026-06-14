@@ -10,7 +10,29 @@ from backend.commands.engine import execute_transaction_script, ValidationError
 from backend.queries.executor import execute_query
 from backend.parser.parser import parse_line
 
-# Initialize Database tables
+# Initialize Database tables and execute safety migrations for SQLite
+def run_migrations():
+    import sqlite3
+    from backend.database.connection import DATABASE_URL
+    if DATABASE_URL.startswith("sqlite:///"):
+        db_path = DATABASE_URL.replace("sqlite:///", "")
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        for table in ["tasks", "goals"]:
+            for col in ["scheduled_from", "scheduled_to"]:
+                try:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {col} DATETIME;")
+                except sqlite3.OperationalError:
+                    # Column already exists
+                    pass
+        conn.commit()
+        conn.close()
+
+try:
+    run_migrations()
+except Exception as e:
+    print(f"Migration error: {e}")
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Opsa (MissionOS) API", version="1.0.0")
@@ -117,6 +139,8 @@ def get_state_endpoint(db: Session = Depends(get_db)):
             "slug": g.slug,
             "status": g.status,
             "type": "GOAL",
+            "scheduled_from": g.scheduled_from.isoformat() if g.scheduled_from else None,
+            "scheduled_to": g.scheduled_to.isoformat() if g.scheduled_to else None,
             "tasks": []
         }
         goal_map[g.id] = g_dict
@@ -135,7 +159,9 @@ def get_state_endpoint(db: Session = Depends(get_db)):
             "type": "TASK",
             "priority": t.priority,
             "deferred_until": t.deferred_until.strftime("%Y-%m-%d") if t.deferred_until else None,
-            "deferred_condition": t.deferred_condition
+            "deferred_condition": t.deferred_condition,
+            "scheduled_from": t.scheduled_from.isoformat() if t.scheduled_from else None,
+            "scheduled_to": t.scheduled_to.isoformat() if t.scheduled_to else None
         }
         if t.goal_id in goal_map:
             goal_map[t.goal_id]["tasks"].append(t_dict)
