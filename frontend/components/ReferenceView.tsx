@@ -166,7 +166,7 @@ export default function ReferenceView() {
   return (
     <div className="flex flex-col gap-6">
       {/* Blueprint Header Banner */}
-      <div className="glass-panel p-6 rounded-2xl border border-[#e3dbcd] relative overflow-hidden bg-[#2E3630] text-[#FAF7F2] shadow-sm flex flex-col gap-2">
+      <div className="p-6 rounded-2xl border border-[#e3dbcd] relative overflow-hidden bg-[#2E3630] text-[#FAF7F2] shadow-sm flex flex-col gap-2">
         {/* Subtle technical graphic grids background */}
         <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
           backgroundImage: 'radial-gradient(#FAF7F2 1px, transparent 1px)',

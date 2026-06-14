@@ -57,7 +57,7 @@ export interface ConsoleLog {
 }
 
 interface AppState {
-  activeTab: "mission" | "responsibility" | "graph" | "timeline" | "console" | "reference";
+  activeTab: "mission" | "goals" | "responsibility" | "graph" | "timeline" | "console" | "reference";
   stateTree: StateTree | null;
   timeline: TimelineEvent[];
   graph: GraphData | null;

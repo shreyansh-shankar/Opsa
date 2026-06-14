@@ -18,7 +18,7 @@ export default function ResponsibilityView() {
   }
 
   const toggleCollapse = (id: string) => {
-    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
+    setCollapsed((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }));
   };
 
   const getStatusBadge = (status: string) => {
@@ -96,7 +96,7 @@ export default function ResponsibilityView() {
   };
 
   const renderGoal = (goal: StateNode, depth: number) => {
-    const isCollapsed = collapsed[goal.id];
+    const isCollapsed = collapsed[goal.id] ?? true;
     const { completed, total, pct } = computeProgress(goal);
 
     return (
@@ -135,7 +135,7 @@ export default function ResponsibilityView() {
   };
 
   const renderProject = (project: StateNode, depth: number) => {
-    const isCollapsed = collapsed[project.id];
+    const isCollapsed = collapsed[project.id] ?? true;
     const { completed, total, pct } = computeProgress(project);
 
     return (
@@ -176,7 +176,7 @@ export default function ResponsibilityView() {
   };
 
   const renderResponsibility = (resp: StateNode) => {
-    const isCollapsed = collapsed[resp.id];
+    const isCollapsed = collapsed[resp.id] ?? true;
     const { completed, total, pct } = computeProgress(resp);
 
     return (

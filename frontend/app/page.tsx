@@ -4,6 +4,7 @@ import React, { useEffect } from "react";
 import { useStore, StateNode } from "@/store/useStore";
 import CommandPalette from "@/components/CommandPalette";
 import MissionView from "@/components/MissionView";
+import GoalView from "@/components/GoalView";
 import ResponsibilityView from "@/components/ResponsibilityView";
 import DependencyGraph from "@/components/DependencyGraph";
 import TimelineView from "@/components/TimelineView";
@@ -22,7 +23,8 @@ import {
   HelpCircle,
   Settings,
   ShieldCheck,
-  User
+  User,
+  Target
 } from "lucide-react";
 
 export default function Home() {
@@ -65,6 +67,7 @@ export default function Home() {
 
   const tabs = [
     { id: "mission", label: "Mission Overview", icon: Compass, component: MissionView },
+    { id: "goals", label: "Goals Tracker", icon: Target, component: GoalView },
     { id: "responsibility", label: "Commit Tree", icon: Layers, component: ResponsibilityView },
     { id: "graph", label: "Dependency Network", icon: Network, component: DependencyGraph },
     { id: "timeline", label: "Operation Timeline", icon: GitBranch, component: TimelineView },
