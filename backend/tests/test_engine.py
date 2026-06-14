@@ -188,6 +188,36 @@ class TestEngine(unittest.TestCase):
         self.assertIsNone(task_a.scheduled_from)
         self.assertIsNone(task_a.scheduled_to)
 
+        # 15-minute rounding assertion
+        execute_transaction_script(self.db, "SCHEDULE TaskA FROM 2026-06-15 09:07:00 TO 2026-06-15 10:23:00")
+        task_a = self.db.query(Task).filter_by(slug="taska").first()
+        self.assertEqual(task_a.scheduled_from.strftime("%Y-%m-%d %H:%M:%S"), "2026-06-15 09:00:00")
+        self.assertEqual(task_a.scheduled_to.strftime("%Y-%m-%d %H:%M:%S"), "2026-06-15 10:30:00")
+
+        # Partial day number syntax (e.g. 15 TO 18)
+        execute_transaction_script(self.db, "SCHEDULE TaskA FROM 15 TO 18")
+        task_a = self.db.query(Task).filter_by(slug="taska").first()
+        self.assertEqual(task_a.scheduled_from.strftime("%H:%M:%S"), "00:00:00")
+        self.assertEqual(task_a.scheduled_to.strftime("%H:%M:%S"), "23:45:00")
+        self.assertEqual(task_a.scheduled_from.day, 15)
+        self.assertEqual(task_a.scheduled_to.day, 18)
+
+        # Duration-based offset syntax (e.g. 2026-06-15 09:00 TO 72 hours)
+        execute_transaction_script(self.db, "SCHEDULE TaskA FROM 2026-06-15 09:00 TO 72 hours")
+        task_a = self.db.query(Task).filter_by(slug="taska").first()
+        self.assertEqual(task_a.scheduled_from.strftime("%Y-%m-%d %H:%M:%S"), "2026-06-15 09:00:00")
+        self.assertEqual(task_a.scheduled_to.strftime("%Y-%m-%d %H:%M:%S"), "2026-06-18 09:00:00") # 72 hours later
+
+        # NOW syntax offset (e.g. NOW TO 5 days)
+        res_now = execute_transaction_script(self.db, "SCHEDULE TaskA FROM NOW TO 5 days")
+        self.assertEqual(res_now["status"], "SUCCESS")
+        task_a = self.db.query(Task).filter_by(slug="taska").first()
+        self.assertIsNotNone(task_a.scheduled_from)
+        self.assertIsNotNone(task_a.scheduled_to)
+        # Verify rounded minutes
+        self.assertIn(task_a.scheduled_from.minute, [0, 15, 30, 45])
+        self.assertIn(task_a.scheduled_to.minute, [0, 15, 30, 45])
+
         # Invalid target for SCHEDULE (responsibility)
         with self.assertRaises(ValidationError):
             execute_transaction_script(self.db, "SCHEDULE T1 FROM 2026-06-15 TO 2026-06-16")

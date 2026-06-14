@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from sqlalchemy.orm import Session
 from backend.models.models import Event, Transaction
 from backend.state_builder.state_store import StateStore, rebuild_projections, slugify
@@ -257,6 +257,124 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
         if start_dt and end_dt and start_dt > end_dt:
             raise ValidationError(f"Start datetime '{start_str}' must be before or equal to end datetime '{end_str}'")
 
+def resolve_datetime_str(val: Optional[str], is_end: bool = False, start_str: Optional[str] = None, entity: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    if not val or val.lower() == "null":
+        return "null"
+    
+    import re
+    from datetime import datetime, timedelta, timezone
+    import calendar
+
+    # Round to 15 mins helper
+    def round_dt_to_15_mins(dt: datetime) -> datetime:
+        minute = dt.minute
+        rounded_minute = int(round(minute / 15.0) * 15)
+        if rounded_minute == 60:
+            dt = dt.replace(minute=0, second=0, microsecond=0)
+            dt += timedelta(hours=1)
+        else:
+            dt = dt.replace(minute=rounded_minute, second=0, microsecond=0)
+        return dt
+
+    val_stripped = val.strip()
+
+    # Check for "NOW"
+    if val_stripped.upper() == "NOW":
+        dt = round_dt_to_15_mins(datetime.now())
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Check if is a duration offset (e.g. "5 days", "72 hours", "10 days")
+    duration_match = re.match(r"^(\d+)\s*(day|days|hour|hours|wk|wks|week|weeks|min|mins|minute|minutes)$", val_stripped, re.IGNORECASE)
+    if duration_match:
+        qty = int(duration_match.group(1))
+        unit = duration_match.group(2).lower()
+        
+        # We need a start datetime to add the offset to
+        ref_start_str = start_str
+        if not ref_start_str and entity:
+            ref_start_str = entity.get("scheduled_from")
+            
+        if ref_start_str and ref_start_str.lower() != "null":
+            start_dt = None
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+                try:
+                    s = ref_start_str.replace("T", " ").split("+")[0].strip()
+                    start_dt = datetime.strptime(s, fmt)
+                    break
+                except ValueError:
+                    pass
+            if not start_dt:
+                start_dt = round_dt_to_15_mins(datetime.now())
+        else:
+            start_dt = round_dt_to_15_mins(datetime.now())
+            
+        if "day" in unit:
+            end_dt = start_dt + timedelta(days=qty)
+        elif "hour" in unit:
+            end_dt = start_dt + timedelta(hours=qty)
+        elif "week" in unit or "wk" in unit:
+            end_dt = start_dt + timedelta(weeks=qty)
+        else: # minutes
+            end_dt = start_dt + timedelta(minutes=qty)
+            
+        end_dt = round_dt_to_15_mins(end_dt)
+        return end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        
+    # Check if a pure day digit (e.g. "15" or "18")
+    if val_stripped.isdigit():
+        day_num = int(val_stripped)
+        now = datetime.now()
+        _, last_day = calendar.monthrange(now.year, now.month)
+        if day_num < 1 or day_num > last_day:
+            raise ValidationError(f"Day number {day_num} is out of bounds for the current month.")
+            
+        dt = datetime(now.year, now.month, day_num)
+        if is_end:
+            dt = dt.replace(hour=23, minute=45, second=0)
+        else:
+            dt = dt.replace(hour=0, minute=0, second=0)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Try standard and month-day formats
+    val_clean = val_stripped.replace("T", " ")
+    parsed_dt = None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            parsed_dt = datetime.strptime(val_clean, fmt)
+            break
+        except ValueError:
+            pass
+            
+    if not parsed_dt:
+        months_dict = {
+            "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+            "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+            "january": 1, "february": 2, "march": 3, "april": 4, "june": 6,
+            "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12
+        }
+        # "June 15" / "Jun 15"
+        m = re.match(r"^([a-zA-Z]+)\s+(\d+)$", val_clean, re.IGNORECASE)
+        if m:
+            mon_name = m.group(1).lower()
+            day_num = int(m.group(2))
+            if mon_name in months_dict:
+                now = datetime.now()
+                parsed_dt = datetime(now.year, months_dict[mon_name], day_num)
+        # "15 June" / "15 Jun"
+        m2 = re.match(r"^(\d+)\s+([a-zA-Z]+)$", val_clean, re.IGNORECASE)
+        if m2:
+            day_num = int(m2.group(1))
+            mon_name = m2.group(2).lower()
+            if mon_name in months_dict:
+                now = datetime.now()
+                parsed_dt = datetime(now.year, months_dict[mon_name], day_num)
+
+    if not parsed_dt:
+        return val
+
+    parsed_dt = round_dt_to_15_mins(parsed_dt)
+    return parsed_dt.strftime("%Y-%m-%d %H:%M:%S")
+
 def execute_command_string(db: Session, cmd_str: str) -> Dict[str, Any]:
     """
     Parses and executes a single command. Commits event directly.
@@ -286,6 +404,33 @@ def execute_transaction_script(db: Session, script_text: str) -> Dict[str, Any]:
     for e in events:
         current_state.apply_event(e.operation, e.target, e.payload)
     current_state.compute_derived_states()
+
+    # Pre-process scheduling fields to resolve relative/partial values
+    for cmd in parsed_cmds:
+        op = cmd["operation"]
+        if op == "SCHEDULE":
+            target = cmd.get("target")
+            entity = current_state.get_entity(target) if target else None
+            
+            resolved_from = resolve_datetime_str(cmd.get("scheduled_from"), is_end=False, entity=entity)
+            resolved_to = resolve_datetime_str(cmd.get("scheduled_to"), is_end=True, start_str=resolved_from, entity=entity)
+            
+            cmd["scheduled_from"] = resolved_from
+            cmd["scheduled_to"] = resolved_to
+        elif op == "UPDATE":
+            target = cmd.get("target")
+            entity = current_state.get_entity(target) if target else None
+            updates = cmd.get("updates", {})
+            
+            if "scheduled_from" in updates or "scheduled_to" in updates:
+                resolved_from = None
+                if "scheduled_from" in updates:
+                    resolved_from = resolve_datetime_str(updates["scheduled_from"], is_end=False, entity=entity)
+                    updates["scheduled_from"] = resolved_from
+                
+                if "scheduled_to" in updates:
+                    resolved_to = resolve_datetime_str(updates["scheduled_to"], is_end=True, start_str=resolved_from, entity=entity)
+                    updates["scheduled_to"] = resolved_to
 
     # Generate IDs for splits beforehand if needed to avoid random UUID simulation mismatch
     for cmd in parsed_cmds:

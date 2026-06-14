@@ -84,7 +84,7 @@ export default function Home() {
     <div className="flex flex-col min-h-screen bg-[#F5F0E6] text-[#2c312e] pb-12 selection:bg-[#7A8C74]/30 selection:text-[#2c312e]">
       {/* 1. Header Banner */}
       <header className="border-b border-[#e3dbcd] bg-[#FAF7F2]/85 sticky top-0 z-40 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="w-full px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="flex items-center justify-center h-8 w-8 rounded-lg bg-[#7A8C74]/10 border border-[#7A8C74]/20 text-[#7A8C74] font-mono font-bold text-lg">
               Ω
@@ -119,7 +119,7 @@ export default function Home() {
       </header>
 
       {/* 2. Main content container */}
-      <main className="max-w-7xl mx-auto px-6 mt-6 grow flex flex-col gap-6 w-full">
+      <main className="px-6 mt-6 grow flex flex-col gap-6 w-full">
         {/* Workspace Body */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
           {/* Navigation Sidebar Panel */}

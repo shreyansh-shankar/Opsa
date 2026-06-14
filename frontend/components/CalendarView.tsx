@@ -22,6 +22,7 @@ export default function CalendarView() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [filterType, setFilterType] = useState<"GOAL" | "TASK">("GOAL");
 
   // Keep track of current hour for indicator updates
   useEffect(() => {
@@ -60,6 +61,8 @@ export default function CalendarView() {
   stateTree.orphan_projects.forEach(n => collectScheduled(n));
   stateTree.orphan_goals.forEach(n => collectScheduled(n));
   stateTree.orphan_tasks.forEach(n => collectScheduled(n));
+
+  const filteredScheduledItems = scheduledItems.filter(item => item.type === filterType);
 
   const formatDateString = (d: Date) => {
     const y = d.getFullYear();
@@ -171,7 +174,7 @@ export default function CalendarView() {
 
   // Packing Algorithm for Weekly View
   const getPackedWeeklyRows = () => {
-    const weeklyItems = scheduledItems.filter(isItemInWeek);
+    const weeklyItems = filteredScheduledItems.filter(isItemInWeek);
     
     // Sort by start date then duration (longest first)
     const sorted = [...weeklyItems].sort((a, b) => {
@@ -209,7 +212,7 @@ export default function CalendarView() {
 
   // Packing Algorithm for Daily View
   const getPackedDailyRows = (targetDayStr: string) => {
-    const dailyItems = scheduledItems.filter(item => isItemInDay(item, targetDayStr));
+    const dailyItems = filteredScheduledItems.filter(item => isItemInDay(item, targetDayStr));
 
     // Sort by starting hour
     const sorted = [...dailyItems].sort((a, b) => {
@@ -331,7 +334,7 @@ export default function CalendarView() {
   };
 
   // Agenda Selection items
-  const selectedDayItems = scheduledItems.filter(item => isItemInDay(item, selectedDateStr));
+  const selectedDayItems = filteredScheduledItems.filter(item => isItemInDay(item, selectedDateStr));
 
   // Render Row Packing Grids
   const packedWeeklyRows = getPackedWeeklyRows();
@@ -360,6 +363,32 @@ export default function CalendarView() {
           </div>
           
           <div className="flex items-center gap-2 self-end sm:self-auto">
+            {/* Goals/Tasks Toggle */}
+            <div className="flex rounded-lg border border-[#e3dbcd] bg-[#FAF7F2] p-0.5 shadow-sm mr-2">
+              <button
+                onClick={() => setFilterType("GOAL")}
+                className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-mono rounded-md transition-all cursor-pointer ${
+                  filterType === "GOAL"
+                    ? "bg-[#CE8D6D]/15 text-[#2c312e] font-bold"
+                    : "text-[#67736b] hover:text-[#2c312e]"
+                }`}
+              >
+                <Target className="h-3.5 w-3.5 text-[#CE8D6D]" />
+                <span>Goals</span>
+              </button>
+              <button
+                onClick={() => setFilterType("TASK")}
+                className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-mono rounded-md transition-all cursor-pointer ${
+                  filterType === "TASK"
+                    ? "bg-[#7A8C74]/15 text-[#2c312e] font-bold"
+                    : "text-[#67736b] hover:text-[#2c312e]"
+                }`}
+              >
+                <Compass className="h-3.5 w-3.5 text-[#7A8C74]" />
+                <span>Tasks</span>
+              </button>
+            </div>
+
             {/* View Mode Toggle */}
             <div className="flex rounded-lg border border-[#e3dbcd] bg-[#FAF7F2] p-0.5 shadow-sm mr-2">
               <button
@@ -609,7 +638,7 @@ export default function CalendarView() {
         <div className="glass-panel p-5 rounded-2xl border border-[#e3dbcd] bg-[#FAF7F2] shadow-sm flex flex-col gap-4">
           <div className="border-b border-[#e3dbcd] pb-3">
             <h3 className="text-xs font-mono uppercase tracking-widest text-[#67736b] font-bold">
-              Daily Agenda
+              {filterType === "GOAL" ? "Goals" : "Tasks"} Agenda
             </h3>
             <span className="text-xs font-serif font-bold text-[#2c312e] block mt-1">
               {selectedDate.toLocaleDateString(undefined, {
