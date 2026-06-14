@@ -39,7 +39,8 @@ class StateStore:
                 "type": "RESPONSIBILITY",
                 "name": name,
                 "slug": slug,
-                "status": "ACTIVE",
+                "status": "NOT_STARTED",
+                "base_status": "NOT_STARTED",
                 "parent_slug": None,
                 "priority": "MEDIUM",
                 "deferred_until": None,
@@ -54,7 +55,8 @@ class StateStore:
                 "type": "PROJECT",
                 "name": name,
                 "slug": slug,
-                "status": "ACTIVE",
+                "status": "NOT_STARTED",
+                "base_status": "NOT_STARTED",
                 "parent_slug": slugify(payload.get("parent", "")),
                 "priority": "MEDIUM",
                 "deferred_until": None,
@@ -69,7 +71,8 @@ class StateStore:
                 "type": "GOAL",
                 "name": name,
                 "slug": slug,
-                "status": "ACTIVE",
+                "status": "NOT_STARTED",
+                "base_status": "NOT_STARTED",
                 "parent_slug": slugify(payload.get("parent", "")),
                 "priority": "MEDIUM",
                 "deferred_until": None,
@@ -84,7 +87,8 @@ class StateStore:
                 "type": "TASK",
                 "name": name,
                 "slug": slug,
-                "status": "ACTIVE",
+                "status": "NOT_STARTED",
+                "base_status": "NOT_STARTED",
                 "parent_slug": slugify(payload.get("parent", "")) if payload.get("parent") else None,
                 "priority": "MEDIUM",
                 "deferred_until": None,
@@ -121,6 +125,7 @@ class StateStore:
                     entity["priority"] = val.upper()
                 elif key == "status":
                     entity["status"] = val.upper()
+                    entity["base_status"] = val.upper()
                 elif key == "deferred_until":
                     entity["deferred_until"] = val
                 elif key == "deferred_condition":
@@ -130,11 +135,13 @@ class StateStore:
             entity = self.entities.get(target_slug)
             if entity:
                 entity["status"] = "COMPLETED"
+                entity["base_status"] = "COMPLETED"
 
         elif op == "DELETE":
             entity = self.entities.get(target_slug)
             if entity:
                 entity["status"] = "DELETED"
+                entity["base_status"] = "DELETED"
                 # Remove target_slug from entities
                 self.entities.pop(target_slug, None)
                 # Remove relationships involving target_slug
@@ -147,11 +154,25 @@ class StateStore:
             entity = self.entities.get(target_slug)
             if entity:
                 entity["status"] = "ARCHIVED"
+                entity["base_status"] = "ARCHIVED"
 
         elif op == "RESTORE":
             entity = self.entities.get(target_slug)
             if entity:
                 entity["status"] = "ACTIVE"
+                entity["base_status"] = "ACTIVE"
+
+        elif op == "PAUSE":
+            entity = self.entities.get(target_slug)
+            if entity:
+                entity["status"] = "PAUSED"
+                entity["base_status"] = "PAUSED"
+
+        elif op == "START":
+            entity = self.entities.get(target_slug)
+            if entity:
+                entity["status"] = "ACTIVE"
+                entity["base_status"] = "ACTIVE"
 
         elif op == "PROMOTE":
             entity = self.entities.get(target_slug)
@@ -189,6 +210,7 @@ class StateStore:
                     entity["deferred_condition"] = until
                     entity["deferred_until"] = None
                 entity["status"] = "DEFERRED"
+                entity["base_status"] = "DEFERRED"
 
         elif op == "BLOCK":
             blocker_slug = slugify(payload.get("blocker", ""))
@@ -255,7 +277,8 @@ class StateStore:
                     "type": entity_type,
                     "name": name,
                     "slug": n_slug,
-                    "status": "ACTIVE",
+                    "status": "NOT_STARTED",
+                    "base_status": "NOT_STARTED",
                     "parent_slug": parent_slug,
                     "priority": entity.get("priority", "MEDIUM"),
                     "deferred_until": None,
@@ -309,7 +332,8 @@ class StateStore:
                 "type": entity_type,
                 "name": name,
                 "slug": tgt_slug,
-                "status": "ACTIVE",
+                "status": "NOT_STARTED",
+                "base_status": "NOT_STARTED",
                 "parent_slug": parent_slug,
                 "priority": priority,
                 "deferred_until": None,
@@ -342,7 +366,12 @@ class StateStore:
         Calculates computed status (like BLOCKED or DEFERRED) and clears completions.
         This matches dependencies, deadlines, and deferral conditions.
         """
-        # We need a copy of original active statuses because propagation depends on current actual completed state
+        for entity in self.entities.values():
+            if "base_status" not in entity:
+                entity["base_status"] = entity["status"]
+            else:
+                entity["status"] = entity["base_status"]
+
         # First evaluate deferral conditions
         for slug, entity in self.entities.items():
             if entity["status"] == "DEFERRED":
@@ -352,6 +381,7 @@ class StateStore:
                         due = datetime.strptime(entity["deferred_until"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
                         if datetime.now(timezone.utc) >= due:
                             entity["status"] = "ACTIVE"
+                            entity["base_status"] = "ACTIVE"
                             entity["deferred_until"] = None
                     except ValueError:
                         pass
@@ -364,6 +394,7 @@ class StateStore:
                         dep_ent = self.entities.get(dep_slug)
                         if dep_ent and dep_ent["status"] == "COMPLETED":
                             entity["status"] = "ACTIVE"
+                            entity["base_status"] = "ACTIVE"
                             entity["deferred_condition"] = None
 
         # Build blocker index: target_slug -> list of blocker_slugs
@@ -379,7 +410,7 @@ class StateStore:
         # Since blocking can propagate, we do this iteratively or recursively.
         # But simpler: check if any blocker is not completed/deleted
         for slug, entity in self.entities.items():
-            if entity["status"] in ["ACTIVE", "BLOCKED"]:
+            if entity["status"] in ["ACTIVE", "NOT_STARTED", "PAUSED", "BLOCKED"]:
                 active_blockers = []
                 for b_slug in blockers.get(slug, []):
                     b_ent = self.entities.get(b_slug)
@@ -389,7 +420,7 @@ class StateStore:
                     entity["status"] = "BLOCKED"
                 else:
                     if entity["status"] == "BLOCKED":
-                        entity["status"] = "ACTIVE"
+                        entity["status"] = entity.get("base_status", "ACTIVE")
 
     def write_to_db(self, db: Session) -> None:
         """

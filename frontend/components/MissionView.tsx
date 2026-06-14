@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useStore, StateNode } from "@/store/useStore";
-import { AlertTriangle, Calendar, CheckCircle, ShieldAlert, Award, Clock, ArrowUpRight, Bookmark, CircleCheck, AlertOctagon } from "lucide-react";
+import { AlertTriangle, Calendar, CheckCircle, ShieldAlert, Award, Clock, ArrowUpRight, Bookmark, CircleCheck, AlertOctagon, PlayCircle, PauseCircle } from "lucide-react";
 
 export default function MissionView() {
   const { stateTree, executeCommand, setActiveTab } = useStore();
@@ -43,6 +43,8 @@ export default function MissionView() {
   const blockedItems = allTasks.filter((t) => t.status === "BLOCKED");
   const activeGoals = allGoals.filter((g) => g.status === "ACTIVE");
   const deferredTasks = allTasks.filter((t) => t.status === "DEFERRED");
+  const pausedTasks = allTasks.filter((t) => t.status === "PAUSED");
+  const notStartedTasks = allTasks.filter((t) => t.status === "NOT_STARTED");
 
   const handleWhyBlocked = (slug: string) => {
     setActiveTab("console");
@@ -212,6 +214,74 @@ export default function MissionView() {
                       : `Until: ${t.deferred_condition}`}
                   </span>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 5. Paused Work */}
+      <div className="glass-panel p-5 rounded-2xl border border-[#e3dbcd] bg-[#FAF7F2] flex flex-col gap-4 shadow-sm">
+        <div className="flex items-center gap-2.5 border-b border-[#e3dbcd] pb-3">
+          <PauseCircle className="h-4.5 w-4.5 text-[#5C7CFA]" fill="#5C7CFA" />
+          <h2 className="font-sans font-bold text-xs tracking-wider text-[#2c312e] uppercase">PAUSED WORK</h2>
+          <span className="ml-auto text-[9px] font-mono px-2 py-0.5 rounded-full bg-[#F5F0E6] text-[#67736b] border border-[#e3dbcd]/50">
+            {pausedTasks.length} items
+          </span>
+        </div>
+
+        {pausedTasks.length === 0 ? (
+          <div className="text-[#67736b] text-xs font-sans py-12 text-center italic">
+            No paused tasks.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {pausedTasks.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center justify-between p-3 rounded-xl bg-[#FAF7F2] border border-[#e3dbcd] hover:border-[#d6cebf] transition-all"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs text-[#2c312e] font-sans font-semibold">{t.name}</span>
+                  <span className="text-[9px] text-[#67736b] font-mono">slug: {t.slug}</span>
+                </div>
+                <span className="text-[9px] font-mono text-[#5C7CFA] bg-[#5C7CFA]/5 px-2.5 py-1 rounded-lg border border-[#5C7CFA]/15">
+                  PAUSED
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 6. Backlog / Not Started */}
+      <div className="glass-panel p-5 rounded-2xl border border-[#e3dbcd] bg-[#FAF7F2] flex flex-col gap-4 shadow-sm">
+        <div className="flex items-center gap-2.5 border-b border-[#e3dbcd] pb-3">
+          <PlayCircle className="h-4.5 w-4.5 text-[#788896]" fill="#788896" />
+          <h2 className="font-sans font-bold text-xs tracking-wider text-[#2c312e] uppercase">BACKLOG / NOT STARTED</h2>
+          <span className="ml-auto text-[9px] font-mono px-2 py-0.5 rounded-full bg-[#F5F0E6] text-[#67736b] border border-[#e3dbcd]/50">
+            {notStartedTasks.length} items
+          </span>
+        </div>
+
+        {notStartedTasks.length === 0 ? (
+          <div className="text-[#67736b] text-xs font-sans py-12 text-center italic">
+            No backlog items. All systems are go.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {notStartedTasks.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center justify-between p-3 rounded-xl bg-[#FAF7F2] border border-[#e3dbcd] hover:border-[#d6cebf] transition-all"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs text-[#2c312e] font-sans font-semibold">{t.name}</span>
+                  <span className="text-[9px] text-[#67736b] font-mono">slug: {t.slug}</span>
+                </div>
+                <span className="text-[9px] font-mono text-[#788896] bg-[#788896]/5 px-2.5 py-1 rounded-lg border border-[#788896]/15">
+                  NOT STARTED
+                </span>
               </div>
             ))}
           </div>

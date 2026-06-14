@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useStore, StateNode } from "@/store/useStore";
-import { ChevronDown, ChevronRight, Folder, FolderOpen, Target, CheckCircle2, Circle, AlertTriangle, Calendar, Layers } from "lucide-react";
+import { ChevronDown, ChevronRight, Folder, FolderOpen, Target, CheckCircle2, Circle, AlertTriangle, Calendar, Layers, PlayCircle, PauseCircle } from "lucide-react";
 
 export default function ResponsibilityView() {
   const { stateTree } = useStore();
@@ -29,6 +29,10 @@ export default function ResponsibilityView() {
         return <span className="text-[9px] font-mono text-[#C25953] bg-[#C25953]/10 border border-[#C25953]/20 px-2 py-0.5 rounded-md">Blocked</span>;
       case "DEFERRED":
         return <span className="text-[9px] font-mono text-[#D4A351] bg-[#D4A351]/10 border border-[#D4A351]/20 px-2 py-0.5 rounded-md">Deferred</span>;
+      case "PAUSED":
+        return <span className="text-[9px] font-mono text-[#5C7CFA] bg-[#5C7CFA]/10 border border-[#5C7CFA]/20 px-2 py-0.5 rounded-md">Paused</span>;
+      case "NOT_STARTED":
+        return <span className="text-[9px] font-mono text-[#788896] bg-[#788896]/10 border border-[#788896]/20 px-2 py-0.5 rounded-md">Not Started</span>;
       case "ARCHIVED":
         return <span className="text-[9px] font-mono text-[#67736b] bg-[#e3dbcd]/30 border border-[#e3dbcd]/50 px-2 py-0.5 rounded-md">Archived</span>;
       default:
@@ -68,6 +72,10 @@ export default function ResponsibilityView() {
           <AlertTriangle className="h-4 w-4 text-[#C25953] shrink-0" />
         ) : task.status === "DEFERRED" ? (
           <Calendar className="h-4 w-4 text-[#D4A351] shrink-0" />
+        ) : task.status === "PAUSED" ? (
+          <PauseCircle className="h-4 w-4 text-[#5C7CFA] shrink-0" />
+        ) : task.status === "NOT_STARTED" ? (
+          <PlayCircle className="h-4 w-4 text-[#788896] shrink-0" />
         ) : (
           <Circle className="h-4 w-4 text-[#7A8C74] shrink-0" />
         )}

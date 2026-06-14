@@ -66,6 +66,8 @@ export default function DependencyGraph() {
     if (status === "COMPLETED") return "#5F8C6E"; // Emerald
     if (status === "BLOCKED") return "#C25953"; // Rose
     if (status === "DEFERRED") return "#D4A351"; // Mustard
+    if (status === "PAUSED") return "#5C7CFA"; // Blue
+    if (status === "NOT_STARTED") return "#788896"; // Slate/Gray
     return type === "RESPONSIBILITY" ? "#CE8D6D" : "#7A8C74"; // Terracotta or Sage
   };
 

@@ -136,6 +136,20 @@ def parse_line(line: str) -> Dict[str, Any]:
         target = " ".join(tokens[1:])
         return {"operation": "RESTORE", "target": target, "raw": line_clean}
 
+    # PAUSE
+    elif first_token == "PAUSE":
+        if len(tokens) < 2:
+            raise ParseError("PAUSE command requires a target.")
+        target = " ".join(tokens[1:])
+        return {"operation": "PAUSE", "target": target, "raw": line_clean}
+
+    # START
+    elif first_token == "START":
+        if len(tokens) < 2:
+            raise ParseError("START command requires a target.")
+        target = " ".join(tokens[1:])
+        return {"operation": "START", "target": target, "raw": line_clean}
+
     # PROMOTE
     elif first_token == "PROMOTE":
         if len(tokens) < 2:
@@ -362,8 +376,11 @@ def parse_line(line: str) -> Dict[str, Any]:
         if len(tokens) < 2:
             raise ParseError("SHOW command requires a query type (e.g. SHOW ACTIVE).")
         query_type = tokens[1].upper()
+        if query_type == "NOT" and len(tokens) == 3 and tokens[2].upper() == "STARTED":
+            query_type = "NOT_STARTED"
+            tokens = [tokens[0], "NOT_STARTED"]
         allowed_queries = [
-            "ACTIVE", "BLOCKED", "DEFERRED", "ARCHIVED",
+            "ACTIVE", "BLOCKED", "DEFERRED", "ARCHIVED", "PAUSED", "NOT_STARTED",
             "RESPONSIBILITIES", "PROJECTS", "GOALS", "TASKS", "RECENT"
         ]
         if query_type not in allowed_queries:

@@ -99,7 +99,7 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
                         curr_ent = state.get_entity(curr)
                         curr = curr_ent.get("parent_slug") if curr_ent else None
 
-    elif op in ["COMPLETE", "DELETE", "ARCHIVE", "RESTORE", "PROMOTE", "DEMOTE", "UNBLOCK"]:
+    elif op in ["COMPLETE", "DELETE", "ARCHIVE", "RESTORE", "PROMOTE", "DEMOTE", "UNBLOCK", "PAUSE", "START"]:
         target = cmd["target"]
         target_ent = state.get_entity(target)
         if not target_ent:

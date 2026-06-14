@@ -82,6 +82,8 @@ class TestEngine(unittest.TestCase):
         execute_transaction_script(self.db, "CREATE TASK TaskA UNDER LinuxTrack")
         execute_transaction_script(self.db, "CREATE TASK TaskB UNDER LinuxTrack")
 
+        # Start TaskB
+        execute_transaction_script(self.db, "START TaskB")
         # Block TaskB with TaskA
         execute_transaction_script(self.db, "BLOCK TaskB BY TaskA")
         # TaskB should be BLOCKED
@@ -116,7 +118,7 @@ class TestEngine(unittest.TestCase):
         
         task_b = self.db.query(Task).filter_by(slug="taskb").first()
         self.assertIsNotNone(task_b)
-        self.assertEqual(task_b.status, "ACTIVE")
+        self.assertEqual(task_b.status, "NOT_STARTED")
 
         task_c = self.db.query(Task).filter_by(slug="taskc").first()
         self.assertIsNotNone(task_c)
@@ -131,6 +133,29 @@ class TestEngine(unittest.TestCase):
 
         task_d = self.db.query(Task).filter_by(slug="taskd").first()
         self.assertIsNotNone(task_d)
+
+    def test_start_and_pause_lifecycle(self):
+        execute_transaction_script(self.db, "CREATE RESPONSIBILITY Startup")
+        execute_transaction_script(self.db, "CREATE TASK TaskA UNDER Startup")
+        
+        # Verify default is NOT_STARTED
+        task_a = self.db.query(Task).filter_by(slug="taska").first()
+        self.assertEqual(task_a.status, "NOT_STARTED")
+
+        # Start task
+        execute_transaction_script(self.db, "START TaskA")
+        task_a = self.db.query(Task).filter_by(slug="taska").first()
+        self.assertEqual(task_a.status, "ACTIVE")
+
+        # Pause task
+        execute_transaction_script(self.db, "PAUSE TaskA")
+        task_a = self.db.query(Task).filter_by(slug="taska").first()
+        self.assertEqual(task_a.status, "PAUSED")
+
+        # Restart task
+        execute_transaction_script(self.db, "START TaskA")
+        task_a = self.db.query(Task).filter_by(slug="taska").first()
+        self.assertEqual(task_a.status, "ACTIVE")
 
 if __name__ == "__main__":
     unittest.main()

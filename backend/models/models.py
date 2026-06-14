@@ -27,7 +27,7 @@ class Responsibility(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String, nullable=False)
     slug = Column(String, unique=True, index=True, nullable=False)
-    status = Column(String, default="ACTIVE")  # ACTIVE | COMPLETED | ARCHIVED | DELETED
+    status = Column(String, default="NOT_STARTED")  # NOT_STARTED | ACTIVE | COMPLETED | ARCHIVED | DELETED | PAUSED
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -38,7 +38,7 @@ class Project(Base):
     responsibility_id = Column(String, ForeignKey("responsibilities.id", ondelete="CASCADE"), nullable=True)
     name = Column(String, nullable=False)
     slug = Column(String, unique=True, index=True, nullable=False)
-    status = Column(String, default="ACTIVE")  # ACTIVE | COMPLETED | ARCHIVED | DELETED
+    status = Column(String, default="NOT_STARTED")  # NOT_STARTED | ACTIVE | COMPLETED | ARCHIVED | DELETED | PAUSED
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -49,7 +49,7 @@ class Goal(Base):
     project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
     name = Column(String, nullable=False)
     slug = Column(String, unique=True, index=True, nullable=False)
-    status = Column(String, default="ACTIVE")  # ACTIVE | COMPLETED | ARCHIVED | DELETED
+    status = Column(String, default="NOT_STARTED")  # NOT_STARTED | ACTIVE | COMPLETED | ARCHIVED | DELETED | PAUSED
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -62,7 +62,7 @@ class Task(Base):
     responsibility_id = Column(String, ForeignKey("responsibilities.id", ondelete="CASCADE"), nullable=True)
     name = Column(String, nullable=False)
     slug = Column(String, unique=True, index=True, nullable=False)
-    status = Column(String, default="ACTIVE")  # ACTIVE | COMPLETED | DEFERRED | BLOCKED | ARCHIVED | DELETED
+    status = Column(String, default="NOT_STARTED")  # NOT_STARTED | ACTIVE | COMPLETED | DEFERRED | BLOCKED | ARCHIVED | DELETED | PAUSED
     deferred_until = Column(DateTime, nullable=True)
     deferred_condition = Column(String, nullable=True)
     priority = Column(String, default="MEDIUM")  # LOW | MEDIUM | HIGH | URGENT

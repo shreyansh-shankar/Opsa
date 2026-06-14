@@ -11,25 +11,25 @@ def execute_query(db: Session, cmd: Dict[str, Any]) -> Dict[str, Any]:
     if op == "SHOW_ACTIVE":
         res = []
         for r in db.query(Responsibility).filter_by(status="ACTIVE").all():
-            res.append({"type": "RESPONSIBILITY", "name": r.name, "slug": r.slug})
+            res.append({"type": "RESPONSIBILITY", "name": r.name, "slug": r.slug, "status": r.status})
         for p in db.query(Project).filter_by(status="ACTIVE").all():
-            res.append({"type": "PROJECT", "name": p.name, "slug": p.slug})
+            res.append({"type": "PROJECT", "name": p.name, "slug": p.slug, "status": p.status})
         for g in db.query(Goal).filter_by(status="ACTIVE").all():
-            res.append({"type": "GOAL", "name": g.name, "slug": g.slug})
+            res.append({"type": "GOAL", "name": g.name, "slug": g.slug, "status": g.status})
         for t in db.query(Task).filter_by(status="ACTIVE").all():
-            res.append({"type": "TASK", "name": t.name, "slug": t.slug, "priority": t.priority})
+            res.append({"type": "TASK", "name": t.name, "slug": t.slug, "priority": t.priority, "status": t.status})
         return {"query": "SHOW ACTIVE", "result": res}
 
     elif op == "SHOW_BLOCKED":
         res = []
         for t in db.query(Task).filter_by(status="BLOCKED").all():
-            res.append({"type": "TASK", "name": t.name, "slug": t.slug, "priority": t.priority})
+            res.append({"type": "TASK", "name": t.name, "slug": t.slug, "priority": t.priority, "status": t.status})
         for g in db.query(Goal).filter_by(status="BLOCKED").all():
-            res.append({"type": "GOAL", "name": g.name, "slug": g.slug})
+            res.append({"type": "GOAL", "name": g.name, "slug": g.slug, "status": g.status})
         for p in db.query(Project).filter_by(status="BLOCKED").all():
-            res.append({"type": "PROJECT", "name": p.name, "slug": p.slug})
+            res.append({"type": "PROJECT", "name": p.name, "slug": p.slug, "status": p.status})
         for r in db.query(Responsibility).filter_by(status="BLOCKED").all():
-            res.append({"type": "RESPONSIBILITY", "name": r.name, "slug": r.slug})
+            res.append({"type": "RESPONSIBILITY", "name": r.name, "slug": r.slug, "status": r.status})
         return {"query": "SHOW BLOCKED", "result": res}
 
     elif op == "SHOW_DEFERRED":
@@ -39,21 +39,46 @@ def execute_query(db: Session, cmd: Dict[str, Any]) -> Dict[str, Any]:
                 "type": "TASK",
                 "name": t.name,
                 "slug": t.slug,
+                "status": t.status,
                 "deferred_until": t.deferred_until.isoformat() if t.deferred_until else None,
                 "deferred_condition": t.deferred_condition
             })
         return {"query": "SHOW DEFERRED", "result": res}
 
+    elif op == "SHOW_PAUSED":
+        res = []
+        for r in db.query(Responsibility).filter_by(status="PAUSED").all():
+            res.append({"type": "RESPONSIBILITY", "name": r.name, "slug": r.slug, "status": r.status})
+        for p in db.query(Project).filter_by(status="PAUSED").all():
+            res.append({"type": "PROJECT", "name": p.name, "slug": p.slug, "status": p.status})
+        for g in db.query(Goal).filter_by(status="PAUSED").all():
+            res.append({"type": "GOAL", "name": g.name, "slug": g.slug, "status": g.status})
+        for t in db.query(Task).filter_by(status="PAUSED").all():
+            res.append({"type": "TASK", "name": t.name, "slug": t.slug, "priority": t.priority, "status": t.status})
+        return {"query": "SHOW PAUSED", "result": res}
+
+    elif op == "SHOW_NOT_STARTED":
+        res = []
+        for r in db.query(Responsibility).filter_by(status="NOT_STARTED").all():
+            res.append({"type": "RESPONSIBILITY", "name": r.name, "slug": r.slug, "status": r.status})
+        for p in db.query(Project).filter_by(status="NOT_STARTED").all():
+            res.append({"type": "PROJECT", "name": p.name, "slug": p.slug, "status": p.status})
+        for g in db.query(Goal).filter_by(status="NOT_STARTED").all():
+            res.append({"type": "GOAL", "name": g.name, "slug": g.slug, "status": g.status})
+        for t in db.query(Task).filter_by(status="NOT_STARTED").all():
+            res.append({"type": "TASK", "name": t.name, "slug": t.slug, "priority": t.priority, "status": t.status})
+        return {"query": "SHOW NOT STARTED", "result": res}
+
     elif op == "SHOW_ARCHIVED":
         res = []
         for r in db.query(Responsibility).filter_by(status="ARCHIVED").all():
-            res.append({"type": "RESPONSIBILITY", "name": r.name, "slug": r.slug})
+            res.append({"type": "RESPONSIBILITY", "name": r.name, "slug": r.slug, "status": r.status})
         for p in db.query(Project).filter_by(status="ARCHIVED").all():
-            res.append({"type": "PROJECT", "name": p.name, "slug": p.slug})
+            res.append({"type": "PROJECT", "name": p.name, "slug": p.slug, "status": p.status})
         for g in db.query(Goal).filter_by(status="ARCHIVED").all():
-            res.append({"type": "GOAL", "name": g.name, "slug": g.slug})
+            res.append({"type": "GOAL", "name": g.name, "slug": g.slug, "status": g.status})
         for t in db.query(Task).filter_by(status="ARCHIVED").all():
-            res.append({"type": "TASK", "name": t.name, "slug": t.slug})
+            res.append({"type": "TASK", "name": t.name, "slug": t.slug, "status": t.status})
         return {"query": "SHOW ARCHIVED", "result": res}
 
     elif op == "SHOW_RESPONSIBILITIES":

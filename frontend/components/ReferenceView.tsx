@@ -53,6 +53,16 @@ export default function ReferenceView() {
           example: "COMPLETE Module1"
         },
         {
+          cmd: "START <target>",
+          desc: "Starts a paused or not started entity, transitioning its status to ACTIVE.",
+          example: "START Module1"
+        },
+        {
+          cmd: "PAUSE <target>",
+          desc: "Pauses an active or not started entity, transitioning its status to PAUSED.",
+          example: "PAUSE Module1"
+        },
+        {
           cmd: "PROMOTE <target> / DEMOTE <target>",
           desc: "Increases or decreases priority levels (LOW -> MEDIUM -> HIGH -> URGENT).",
           example: "PROMOTE Module1",
@@ -135,7 +145,7 @@ export default function ReferenceView() {
       subtitle: "Inspect the runtime's derived database state.",
       items: [
         {
-          cmd: "SHOW ACTIVE / BLOCKED / DEFERRED / ARCHIVED",
+          cmd: "SHOW ACTIVE / BLOCKED / DEFERRED / PAUSED / NOT_STARTED / ARCHIVED",
           desc: "Filters and returns lists of entities matching the status query.",
           example: "SHOW ACTIVE"
         },
