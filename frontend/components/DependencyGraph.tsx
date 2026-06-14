@@ -10,6 +10,12 @@ export default function DependencyGraph() {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [draggedNode, setDraggedNode] = useState<string | null>(null);
 
+  // Infinite canvas pan and zoom state
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
   // Initial random positions distributed in a circle centered in 880x500 viewBox
   const initialPositions = useMemo(() => {
     if (!graph || graph.nodes.length === 0) return {};
@@ -29,6 +35,63 @@ export default function DependencyGraph() {
   useEffect(() => {
     setPositions(initialPositions);
   }, [initialPositions]);
+
+  // Project ancestor map for Goal and Task color inheritance
+  const projectAncestorMap = useMemo(() => {
+    if (!graph || graph.nodes.length === 0) return {};
+    
+    const map: Record<string, string> = {};
+    
+    // 1. Identify all project nodes and map them to themselves.
+    graph.nodes.forEach((node) => {
+      if (node.type === "PROJECT") {
+        map[node.id] = node.id;
+      }
+    });
+
+    // 2. Build adjacency list for hierarchy going from child to parent
+    const parentMap: Record<string, string[]> = {};
+    graph.edges.forEach((edge) => {
+      if (edge.type === "hierarchy") {
+        if (!parentMap[edge.target]) {
+          parentMap[edge.target] = [];
+        }
+        parentMap[edge.target].push(edge.source);
+      }
+    });
+
+    // 3. For each goal or task, traverse parents until a PROJECT node is found
+    const findProjectAncestor = (nodeId: string, visited: Set<string> = new Set()): string | null => {
+      if (visited.has(nodeId)) return null;
+      visited.add(nodeId);
+
+      // If it's already mapped to a project, return that project
+      if (map[nodeId]) return map[nodeId];
+
+      const parents = parentMap[nodeId] || [];
+      for (const p of parents) {
+        // Find parent's node type
+        const parentNode = graph.nodes.find(n => n.id === p);
+        if (parentNode?.type === "PROJECT") {
+          return p;
+        }
+        const ancestor = findProjectAncestor(p, visited);
+        if (ancestor) return ancestor;
+      }
+      return null;
+    };
+
+    graph.nodes.forEach((node) => {
+      if (node.type === "GOAL" || node.type === "TASK") {
+        const projAncestor = findProjectAncestor(node.id);
+        if (projAncestor) {
+          map[node.id] = projAncestor;
+        }
+      }
+    });
+
+    return map;
+  }, [graph]);
 
   // Physics simulation loop (Attraction / Repulsion forces)
   useEffect(() => {
@@ -141,11 +204,11 @@ export default function DependencyGraph() {
           let nextX = pos.x + vel.x;
           let nextY = pos.y + vel.y;
           
-          // Contain within viewport bounds
-          if (nextX < 45) { nextX = 45; vel.x = 0; }
-          if (nextX > 835) { nextX = 835; vel.x = 0; }
-          if (nextY < 45) { nextY = 45; vel.y = 0; }
-          if (nextY > 455) { nextY = 455; vel.y = 0; }
+          // Contain within expanded boundaries for infinite canvas feel
+          if (nextX < -1500) { nextX = -1500; vel.x = 0; }
+          if (nextX > 2500) { nextX = 2500; vel.x = 0; }
+          if (nextY < -1500) { nextY = -1500; vel.y = 0; }
+          if (nextY > 2500) { nextY = 2500; vel.y = 0; }
           
           next[id] = { x: nextX, y: nextY };
         });
@@ -160,30 +223,88 @@ export default function DependencyGraph() {
     return () => cancelAnimationFrame(animationFrameId);
   }, [graph, draggedNode, initialPositions]);
 
-  // Drag and drop handlers
+  // Mouse / dragging interaction handlers
   const handleMouseDown = (nodeId: string, e: React.MouseEvent<SVGGElement>) => {
+    e.stopPropagation(); // Prevent canvas pan trigger
     e.preventDefault();
     setDraggedNode(nodeId);
   };
 
+  const handleCanvasMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return; // Left click panning only
+    setIsPanning(true);
+    setPanStart({
+      x: e.clientX - pan.x,
+      y: e.clientY - pan.y
+    });
+  };
+
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!draggedNode) return;
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 880;
-    const y = ((e.clientY - rect.top) / rect.height) * 500;
-    
-    setPositions((prev) => ({
-      ...prev,
-      [draggedNode]: {
-        x: Math.max(45, Math.min(835, x)),
-        y: Math.max(45, Math.min(455, y))
-      }
-    }));
+    const x_svg = ((e.clientX - rect.left) / rect.width) * 880;
+    const y_svg = ((e.clientY - rect.top) / rect.height) * 500;
+
+    if (draggedNode) {
+      // Offset by pan & scale zoom to drag node perfectly beneath cursor
+      const x_logical = (x_svg - pan.x) / zoom;
+      const y_logical = (y_svg - pan.y) / zoom;
+
+      setPositions((prev) => ({
+        ...prev,
+        [draggedNode]: {
+          x: Math.max(-1480, Math.min(2480, x_logical)),
+          y: Math.max(-1480, Math.min(2480, y_logical))
+        }
+      }));
+    } else if (isPanning) {
+      setPan({
+        x: e.clientX - panStart.x,
+        y: e.clientY - panStart.y
+      });
+    }
   };
 
   const handleMouseUp = () => {
     setDraggedNode(null);
+    setIsPanning(false);
+  };
+
+  // Zooming via scrollwheel centered on the cursor position
+  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const x_mouse = ((e.clientX - rect.left) / rect.width) * 880;
+    const y_mouse = ((e.clientY - rect.top) / rect.height) * 500;
+
+    const zoomFactor = 1.08;
+    const newZoom = e.deltaY < 0 ? zoom * zoomFactor : zoom / zoomFactor;
+    const constrainedZoom = Math.max(0.15, Math.min(4, newZoom));
+
+    // Shift pan offset to center scaling on the cursor pointer
+    const dx = x_mouse - pan.x;
+    const dy = y_mouse - pan.y;
+
+    setPan({
+      x: x_mouse - (dx / zoom) * constrainedZoom,
+      y: y_mouse - (dy / zoom) * constrainedZoom
+    });
+    setZoom(constrainedZoom);
+  };
+
+  // Float Controls
+  const handleZoomIn = () => {
+    setZoom(z => Math.min(4, z * 1.2));
+  };
+
+  const handleZoomOut = () => {
+    setZoom(z => Math.max(0.15, z / 1.2));
+  };
+
+  const handleResetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
   };
 
   if (!graph || graph.nodes.length === 0) {
@@ -198,13 +319,39 @@ export default function DependencyGraph() {
   const nodes = graph.nodes;
   const edges = graph.edges;
 
-  const getStatusColor = (status: string, type: string) => {
-    if (status === "COMPLETED") return "#5F8C6E"; // Emerald
-    if (status === "BLOCKED") return "#C25953"; // Rose
-    if (status === "DEFERRED") return "#D4A351"; // Mustard
-    if (status === "PAUSED") return "#5C7CFA"; // Blue
-    if (status === "NOT_STARTED") return "#788896"; // Slate/Gray
-    return type === "RESPONSIBILITY" ? "#CE8D6D" : "#7A8C74"; // Terracotta or Sage
+  // Consistent color hash generator for project IDs
+  const getProjectColor = (projectId: string) => {
+    let hash = 0;
+    for (let i = 0; i < projectId.length; i++) {
+      hash = projectId.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const colors = [
+      "#26A69A", // Teal
+      "#AB47BC", // Purple
+      "#7986CB", // Light Indigo
+      "#42A5F5", // Light Blue
+      "#FFA726", // Orange/Amber
+      "#FF7043", // Coral/Dark Orange
+      "#78909C", // Slate Grey
+      "#EC407A", // Pink
+      "#5F8C6E", // Green
+      "#5C7CFA", // Indigo Blue
+      "#00897B", // Deep Teal
+      "#8E24AA", // Deep Purple
+    ];
+    return colors[Math.abs(hash) % colors.length];
+  };
+
+  // Node color resolver (Hierarchical inheritance)
+  const getNodeColor = (node: GraphNode) => {
+    if (node.type === "RESPONSIBILITY") {
+      return "#CE8D6D"; // All responsibilities share the exact same terracotta color
+    }
+    const projId = projectAncestorMap[node.id];
+    if (projId) {
+      return getProjectColor(projId);
+    }
+    return "#7A8C74"; // Sage Green fallback for orphans
   };
 
   const getEdgeStyle = (edge: GraphEdge) => {
@@ -255,16 +402,54 @@ export default function DependencyGraph() {
         </div>
       </div>
 
-      <div className="relative bg-[#F5F0E6]/50 rounded-xl overflow-x-auto border border-[#e3dbcd] p-2 select-none">
+      <div className="relative bg-[#F5F0E6]/50 rounded-xl overflow-hidden border border-[#e3dbcd] p-2 select-none">
+        
+        {/* Floating Zoom Control Buttons */}
+        <div className="absolute top-4 right-4 z-20 flex flex-col gap-1 bg-[#FAF7F2]/90 border border-[#e3dbcd] rounded-lg p-1 shadow-sm backdrop-blur-sm">
+          <button
+            onClick={handleZoomIn}
+            title="Zoom In"
+            className="p-1 hover:bg-[#7A8C74]/10 rounded text-[#67736b] hover:text-[#2c312e] transition-colors cursor-pointer text-center font-bold font-mono text-xs h-6 w-6 flex items-center justify-center"
+          >
+            +
+          </button>
+          <button
+            onClick={handleResetView}
+            title="Reset View"
+            className="p-1 hover:bg-[#7A8C74]/10 rounded text-[#67736b] hover:text-[#2c312e] transition-colors cursor-pointer text-center font-mono text-[9px] h-6 w-6 flex items-center justify-center font-bold"
+          >
+            1:1
+          </button>
+          <button
+            onClick={handleZoomOut}
+            title="Zoom Out"
+            className="p-1 hover:bg-[#7A8C74]/10 rounded text-[#67736b] hover:text-[#2c312e] transition-colors cursor-pointer text-center font-bold font-mono text-xs h-6 w-6 flex items-center justify-center"
+          >
+            -
+          </button>
+        </div>
+
         <svg
           viewBox="0 0 880 500"
           className="w-full min-w-[800px] h-[500px] cursor-grab active:cursor-grabbing"
+          onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onWheel={handleWheel}
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
+            {/* Repeating Grid Pattern */}
+            <pattern
+              id="infinite-grid"
+              width="30"
+              height="30"
+              patternUnits="userSpaceOnUse"
+            >
+              <circle cx="2" cy="2" r="0.8" fill="#e3dbcd" opacity="0.75" />
+            </pattern>
+
             {/* Arrow Markers for direction */}
             <marker
               id="arrow-blocks"
@@ -290,108 +475,122 @@ export default function DependencyGraph() {
             </marker>
           </defs>
 
-          {/* 1. Render Edges (lines) first */}
-          {edges.map((edge, idx) => {
-            const p1 = positions[edge.source] || initialPositions[edge.source];
-            const p2 = positions[edge.target] || initialPositions[edge.target];
-            if (!p1 || !p2) return null;
+          {/* Wrapper Group for Pan and Zoom transform */}
+          <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
+            
+            {/* Infinite Repeating Grid Background */}
+            <rect
+              x="-2000"
+              y="-2000"
+              width="5000"
+              height="5000"
+              fill="url(#infinite-grid)"
+              className="pointer-events-none"
+            />
 
-            const style = getEdgeStyle(edge);
-            const isBlocks = edge.type === "blocks";
-            const markerId = isBlocks ? "url(#arrow-blocks)" : edge.type === "hierarchy" ? "" : "url(#arrow-link)";
+            {/* 1. Render Edges (lines) */}
+            {edges.map((edge, idx) => {
+              const p1 = positions[edge.source] || initialPositions[edge.source];
+              const p2 = positions[edge.target] || initialPositions[edge.target];
+              if (!p1 || !p2) return null;
 
-            return (
-              <line
-                key={`edge-${idx}`}
-                x1={p1.x}
-                y1={p1.y}
-                x2={p2.x}
-                y2={p2.y}
-                stroke={style.stroke}
-                strokeWidth={style.strokeWidth}
-                strokeDasharray={style.strokeDasharray}
-                opacity={style.opacity}
-                markerEnd={markerId}
-                className="transition-all duration-300"
-              />
-            );
-          })}
+              const style = getEdgeStyle(edge);
+              const isBlocks = edge.type === "blocks";
+              const markerId = isBlocks ? "url(#arrow-blocks)" : edge.type === "hierarchy" ? "" : "url(#arrow-link)";
 
-          {/* 2. Render Nodes (interactive groups) */}
-          {nodes.map((node) => {
-            const pos = positions[node.id] || initialPositions[node.id];
-            if (!pos) return null;
-
-            const color = getStatusColor(node.status, node.type);
-            const isHovered = hoveredNode === node.id;
-            const isDimmed = hoveredNode && hoveredNode !== node.id;
-
-            return (
-              <g
-                key={node.id}
-                transform={`translate(${pos.x}, ${pos.y})`}
-                onMouseEnter={() => setHoveredNode(node.id)}
-                onMouseLeave={() => setHoveredNode(null)}
-                onMouseDown={(e) => handleMouseDown(node.id, e)}
-                className="cursor-pointer"
-                opacity={isDimmed ? 0.35 : 1}
-                style={{ transition: "opacity 0.25s ease" }}
-              >
-                {/* Outer Glow Ring for hover */}
-                {isHovered && (
-                  <circle
-                    r="15"
-                    fill="none"
-                    stroke={color}
-                    strokeWidth="2"
-                    className="animate-ping"
-                    opacity="0.3"
-                  />
-                )}
-
-                {/* Node circle */}
-                <circle
-                  r={node.type === "RESPONSIBILITY" ? "11" : "7"}
-                  fill="#FAF7F2"
-                  stroke={color}
-                  strokeWidth="2.5"
+              return (
+                <line
+                  key={`edge-${idx}`}
+                  x1={p1.x}
+                  y1={p1.y}
+                  x2={p2.x}
+                  y2={p2.y}
+                  stroke={style.stroke}
+                  strokeWidth={style.strokeWidth}
+                  strokeDasharray={style.strokeDasharray}
+                  opacity={style.opacity}
+                  markerEnd={markerId}
+                  className="transition-all duration-300"
                 />
+              );
+            })}
 
-                {/* Status/Type center dot */}
-                <circle
-                  r={node.type === "RESPONSIBILITY" ? "4" : "2.5"}
-                  fill={color}
-                />
+            {/* 2. Render Nodes (interactive groups) */}
+            {nodes.map((node) => {
+              const pos = positions[node.id] || initialPositions[node.id];
+              if (!pos) return null;
 
-                {/* Label tag */}
-                <text
-                  y="-15"
-                  textAnchor="middle"
-                  fill={isHovered ? "#CE8D6D" : "#2c312e"}
-                  fontSize="9.5"
-                  fontFamily="monospace"
-                  fontWeight={node.type === "RESPONSIBILITY" ? "bold" : "normal"}
-                  className="transition-colors pointer-events-none select-none"
+              const color = getNodeColor(node);
+              const isHovered = hoveredNode === node.id;
+              const isDimmed = hoveredNode && hoveredNode !== node.id;
+
+              return (
+                <g
+                  key={node.id}
+                  transform={`translate(${pos.x}, ${pos.y})`}
+                  onMouseEnter={() => setHoveredNode(node.id)}
+                  onMouseLeave={() => setHoveredNode(null)}
+                  onMouseDown={(e) => handleMouseDown(node.id, e)}
+                  className="cursor-pointer"
+                  opacity={isDimmed ? 0.35 : 1}
+                  style={{ transition: "opacity 0.25s ease" }}
                 >
-                  {node.label}
-                </text>
-                
-                {/* Node type display on hover */}
-                {isHovered && (
+                  {/* Outer Glow Ring for hover */}
+                  {isHovered && (
+                    <circle
+                      r="15"
+                      fill="none"
+                      stroke={color}
+                      strokeWidth="2"
+                      className="animate-ping"
+                      opacity="0.3"
+                    />
+                  )}
+
+                  {/* Node circle */}
+                  <circle
+                    r={node.type === "RESPONSIBILITY" ? "11" : "7"}
+                    fill="#FAF7F2"
+                    stroke={color}
+                    strokeWidth="2.5"
+                  />
+
+                  {/* Status/Type center dot */}
+                  <circle
+                    r={node.type === "RESPONSIBILITY" ? "4" : "2.5"}
+                    fill={color}
+                  />
+
+                  {/* Label tag */}
                   <text
-                    y="20"
+                    y="-15"
                     textAnchor="middle"
-                    fill="#67736b"
-                    fontSize="8"
+                    fill={isHovered ? color : "#2c312e"}
+                    fontSize="9.5"
                     fontFamily="monospace"
-                    className="pointer-events-none select-none"
+                    fontWeight={node.type === "RESPONSIBILITY" ? "bold" : "normal"}
+                    className="transition-colors pointer-events-none select-none"
                   >
-                    {node.type} ({node.status})
+                    {node.label}
                   </text>
-                )}
-              </g>
-            );
-          })}
+                  
+                  {/* Node type display on hover */}
+                  {isHovered && (
+                    <text
+                      y="20"
+                      textAnchor="middle"
+                      fill="#67736b"
+                      fontSize="8"
+                      fontFamily="monospace"
+                      className="pointer-events-none select-none"
+                    >
+                      {node.type} ({node.status})
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
         </svg>
       </div>
     </div>
