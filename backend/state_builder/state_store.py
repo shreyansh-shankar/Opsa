@@ -497,10 +497,57 @@ class StateStore:
                 if r["source_slug"] not in sources and r["target_slug"] not in sources
             ]
 
+    @staticmethod
+    def _compute_parent_status(child_statuses: List[str]) -> str:
+        """
+        Derives a parent entity's status from the statuses of its direct + indirect
+        task children using the following priority (highest wins):
+          ACTIVE > BLOCKED > DEFERRED > PAUSED > NOT_STARTED > COMPLETED > ARCHIVED
+
+        Special rules:
+        - No tasks at all → NOT_STARTED
+        - All same status → that status
+        - Mix of COMPLETED and anything else → the "anything else" wins per priority
+        """
+        if not child_statuses:
+            return "NOT_STARTED"
+
+        unique = set(child_statuses)
+        if len(unique) == 1:
+            return unique.pop()
+
+        # Priority order (index 0 = highest priority)
+        priority = ["ACTIVE", "BLOCKED", "DEFERRED", "PAUSED", "NOT_STARTED", "COMPLETED", "ARCHIVED"]
+        for status in priority:
+            if status in unique:
+                return status
+
+        return "NOT_STARTED"
+
+    def _collect_task_statuses(self, parent_slug: str) -> List[str]:
+        """
+        Recursively collect the computed statuses of all TASK descendants
+        of the given parent entity.
+        """
+        statuses: List[str] = []
+        for ent in self.entities.values():
+            if ent.get("parent_slug") == parent_slug:
+                if ent["type"] == "TASK":
+                    statuses.append(ent["status"])
+                else:
+                    # Recurse into child containers (goals inside projects, etc.)
+                    statuses.extend(self._collect_task_statuses(ent["slug"]))
+        return statuses
+
     def compute_derived_states(self) -> None:
         """
-        Calculates computed status (like BLOCKED or DEFERRED) and clears completions.
-        This matches dependencies, deadlines, and deferral conditions.
+        1. Resets all entity statuses to base_status.
+        2. Evaluates deferral conditions for Tasks.
+        3. Computes BLOCKED state for Tasks based on relationship graph.
+        4. Rolls up Task statuses bottom-up to Goals → Projects → Responsibilities.
+
+        Goals, Projects, and Responsibilities are read-only in terms of status —
+        they are always overwritten by the rollup result.
         """
         for entity in self.entities.values():
             if "base_status" not in entity:
@@ -508,10 +555,12 @@ class StateStore:
             else:
                 entity["status"] = entity["base_status"]
 
-        # First evaluate deferral conditions
+        # --- Step 1: Evaluate deferral conditions (Tasks only) ---
         for slug, entity in self.entities.items():
+            if entity["type"] != "TASK":
+                continue
             if entity["status"] == "DEFERRED":
-                # Check deferred_until
+                # Check deferred_until date
                 if entity.get("deferred_until"):
                     try:
                         due = datetime.strptime(entity["deferred_until"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -521,7 +570,7 @@ class StateStore:
                             entity["deferred_until"] = None
                     except ValueError:
                         pass
-                # Check deferred_condition: e.g. LinuxTrack.Completed
+                # Check deferred_condition (e.g. SomeTask.Completed)
                 elif entity.get("deferred_condition"):
                     cond = entity["deferred_condition"].lower()
                     if cond.endswith(".completed"):
@@ -533,30 +582,42 @@ class StateStore:
                             entity["base_status"] = "ACTIVE"
                             entity["deferred_condition"] = None
 
-        # Build blocker index: target_slug -> list of blocker_slugs
+        # --- Step 2: Compute BLOCKED state for Tasks ---
         blockers: Dict[str, List[str]] = {}
         for rel in self.relationships:
             if rel["type"] == "blocks":
-                t = rel["target_slug"]
-                s = rel["source_slug"]
-                blockers.setdefault(t, []).append(s)
+                blockers.setdefault(rel["target_slug"], []).append(rel["source_slug"])
 
-        # Check blocking state
-        # A task is blocked if it is not completed/archived/deleted AND any of its blockers is NOT completed/deleted
-        # Since blocking can propagate, we do this iteratively or recursively.
-        # But simpler: check if any blocker is not completed/deleted
         for slug, entity in self.entities.items():
+            if entity["type"] != "TASK":
+                continue
             if entity["status"] in ["ACTIVE", "NOT_STARTED", "PAUSED", "BLOCKED"]:
-                active_blockers = []
-                for b_slug in blockers.get(slug, []):
-                    b_ent = self.entities.get(b_slug)
-                    if b_ent and b_ent["status"] not in ["COMPLETED", "DELETED", "ARCHIVED"]:
-                        active_blockers.append(b_slug)
+                active_blockers = [
+                    b for b in blockers.get(slug, [])
+                    if self.entities.get(b, {}).get("status") not in ["COMPLETED", "DELETED", "ARCHIVED"]
+                ]
                 if active_blockers:
                     entity["status"] = "BLOCKED"
-                else:
-                    if entity["status"] == "BLOCKED":
-                        entity["status"] = entity.get("base_status", "ACTIVE")
+                elif entity["status"] == "BLOCKED":
+                    entity["status"] = entity.get("base_status", "ACTIVE")
+
+        # --- Step 3: Bottom-up rollup — Goals ← Tasks ---
+        for slug, entity in self.entities.items():
+            if entity["type"] == "GOAL":
+                task_statuses = self._collect_task_statuses(slug)
+                entity["status"] = self._compute_parent_status(task_statuses)
+
+        # --- Step 4: Bottom-up rollup — Projects ← Goals + direct Tasks ---
+        for slug, entity in self.entities.items():
+            if entity["type"] == "PROJECT":
+                task_statuses = self._collect_task_statuses(slug)
+                entity["status"] = self._compute_parent_status(task_statuses)
+
+        # --- Step 5: Bottom-up rollup — Responsibilities ← Projects + direct Tasks ---
+        for slug, entity in self.entities.items():
+            if entity["type"] == "RESPONSIBILITY":
+                task_statuses = self._collect_task_statuses(slug)
+                entity["status"] = self._compute_parent_status(task_statuses)
 
     def write_to_db(self, db: Session) -> None:
         """

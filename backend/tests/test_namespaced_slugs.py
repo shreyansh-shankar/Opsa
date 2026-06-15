@@ -54,11 +54,18 @@ class TestNamespacedSlugs(unittest.TestCase):
         execute_transaction_script(self.db, "CREATE PROJECT ServiceB UNDER Dev")
         execute_transaction_script(self.db, "CREATE GOAL Frontend UNDER ServiceA")
         execute_transaction_script(self.db, "CREATE GOAL Frontend UNDER ServiceB")
+        execute_transaction_script(self.db, "CREATE TASK TaskA UNDER Frontend OF ServiceA")
+        execute_transaction_script(self.db, "CREATE TASK TaskA UNDER Frontend OF ServiceB")
 
-        # Trying to complete 'Frontend' directly without context should raise ValidationError
+        # Trying to complete 'TaskA' directly without context should raise ambiguity error
         with self.assertRaises(ValidationError) as ctx:
-            execute_transaction_script(self.db, "COMPLETE Frontend")
+            execute_transaction_script(self.db, "COMPLETE TaskA")
         self.assertIn("Ambiguous name reference", str(ctx.exception))
+
+        # Trying to complete a Goal directly should raise task-guard error
+        with self.assertRaises(ValidationError) as ctx2:
+            execute_transaction_script(self.db, "COMPLETE Frontend OF ServiceA")
+        self.assertIn("can only be used on Tasks", str(ctx2.exception))
 
     def test_context_scoped_resolution(self):
         execute_transaction_script(self.db, "CREATE RESPONSIBILITY Dev")
@@ -66,19 +73,22 @@ class TestNamespacedSlugs(unittest.TestCase):
         execute_transaction_script(self.db, "CREATE PROJECT ServiceB UNDER Dev")
         execute_transaction_script(self.db, "CREATE GOAL Frontend UNDER ServiceA")
         execute_transaction_script(self.db, "CREATE GOAL Frontend UNDER ServiceB")
+        execute_transaction_script(self.db, "CREATE TASK TaskX UNDER Frontend OF ServiceA")
+        execute_transaction_script(self.db, "CREATE TASK TaskY UNDER Frontend OF ServiceB")
 
-        # 1. Complete Frontend OF ServiceA
-        res = execute_transaction_script(self.db, "COMPLETE Frontend OF ServiceA")
+        # 1. Complete TaskX (under Frontend OF ServiceA)
+        res = execute_transaction_script(self.db, "COMPLETE TaskX")
         self.assertEqual(res["status"], "SUCCESS")
 
-        # Verify ServiceA's Frontend is COMPLETED but ServiceB's is still NOT_STARTED
+        # Verify ServiceA Frontend rolls up to COMPLETED, ServiceB Frontend stays NOT_STARTED
+        from backend.models.models import Goal
         g_a = self.db.query(Goal).filter_by(slug="dev-servicea-frontend").first()
         g_b = self.db.query(Goal).filter_by(slug="dev-serviceb-frontend").first()
         self.assertEqual(g_a.status, "COMPLETED")
         self.assertEqual(g_b.status, "NOT_STARTED")
 
-        # 2. Complete Frontend UNDER ServiceB
-        res2 = execute_transaction_script(self.db, "COMPLETE Frontend UNDER ServiceB")
+        # 2. Complete TaskY (under Frontend OF ServiceB)
+        res2 = execute_transaction_script(self.db, "COMPLETE TaskY")
         self.assertEqual(res2["status"], "SUCCESS")
         g_b = self.db.query(Goal).filter_by(slug="dev-serviceb-frontend").first()
         self.assertEqual(g_b.status, "COMPLETED")

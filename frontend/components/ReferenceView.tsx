@@ -45,48 +45,53 @@ export default function ReferenceView() {
     },
     {
       title: "2. Status, Priority & Lifecycle Mutations",
-      subtitle: "Alter execution progress, prioritize tasks, and manage entity lifetimes.",
+      subtitle: "Lifecycle commands (COMPLETE, START, PAUSE, etc.) apply to Tasks only. Goal, Project, and Responsibility statuses are auto-derived from their tasks.",
       items: [
         {
-          cmd: "COMPLETE <target>",
-          desc: "Marks a task or goal as completed. Resolves any blocks or state deferrals depending on it.",
-          example: "COMPLETE Module1"
+          cmd: "COMPLETE <task>",
+          desc: "Marks a Task as completed. When all tasks under a Goal/Project/Responsibility complete, the parent status automatically rolls up to COMPLETED.",
+          example: "COMPLETE Module1",
+          notes: "Tasks only. Running COMPLETE on a Goal or Project is rejected — complete the individual tasks instead."
         },
         {
-          cmd: "START <target>",
-          desc: "Starts a paused or not started entity, transitioning its status to ACTIVE.",
-          example: "START Module1"
+          cmd: "START <task>",
+          desc: "Transitions a Task from NOT_STARTED or PAUSED to ACTIVE. Any parent Goal/Project/Responsibility immediately reflects ACTIVE status.",
+          example: "START Module1",
+          notes: "Tasks only."
         },
         {
-          cmd: "PAUSE <target>",
-          desc: "Pauses an active or not started entity, transitioning its status to PAUSED.",
-          example: "PAUSE Module1"
+          cmd: "PAUSE <task>",
+          desc: "Pauses an active Task, transitioning its status to PAUSED. Parents roll up to PAUSED only if all their tasks are paused.",
+          example: "PAUSE Module1",
+          notes: "Tasks only."
         },
         {
-          cmd: "PROMOTE <target> / DEMOTE <target>",
-          desc: "Increases or decreases priority levels (LOW -> MEDIUM -> HIGH -> URGENT).",
+          cmd: "PROMOTE <task> / DEMOTE <task>",
+          desc: "Increases or decreases priority levels (LOW → MEDIUM → HIGH → URGENT).",
           example: "PROMOTE Module1",
-          notes: "Promoting an ACTIVE task with HIGH/URGENT priority places it in 'Today's Priorities'."
+          notes: "Tasks only. Promoting an ACTIVE task with HIGH/URGENT priority places it in 'Today's Priorities'."
         },
         {
           cmd: "UPDATE <target> SET <field> = <value>",
-          desc: "Modifies parameters like name, parent pointer, or priority.",
+          desc: "Modifies parameters like name, parent pointer, or priority. Setting 'status' is only allowed on Tasks.",
           example: "UPDATE Module1 SET priority = URGENT"
         },
         {
           cmd: "DELETE <target>",
-          desc: "Permanently deletes an entity and removes any parent reference or relationships connected to it.",
+          desc: "Permanently deletes an entity and removes any parent reference or relationships connected to it. Works on all entity types.",
           example: "DELETE Module1"
         },
         {
-          cmd: "ARCHIVE <target>",
-          desc: "Archives an entity, removing it from active views but preserving event history.",
-          example: "ARCHIVE Module1"
+          cmd: "ARCHIVE <task>",
+          desc: "Archives a Task, removing it from active views but preserving event history.",
+          example: "ARCHIVE Module1",
+          notes: "Tasks only."
         },
         {
-          cmd: "RESTORE <target>",
-          desc: "Restores an archived entity back to ACTIVE status.",
-          example: "RESTORE Module1"
+          cmd: "RESTORE <task>",
+          desc: "Restores an archived Task back to ACTIVE status.",
+          example: "RESTORE Module1",
+          notes: "Tasks only."
         }
       ]
     },

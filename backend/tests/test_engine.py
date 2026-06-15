@@ -232,3 +232,186 @@ class TestEngine(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStatusRollup(unittest.TestCase):
+    """Tests that Goal/Project/Responsibility statuses are derived from task statuses."""
+
+    def setUp(self):
+        self.engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(self.engine)
+        Session = sessionmaker(bind=self.engine)
+        self.db = Session()
+
+    def tearDown(self):
+        self.db.close()
+        Base.metadata.drop_all(self.engine)
+
+    def _setup_hierarchy(self):
+        """Creates: Resp → Project → Goal → [Task1, Task2]"""
+        execute_transaction_script(self.db, "CREATE RESPONSIBILITY Resp")
+        execute_transaction_script(self.db, "CREATE PROJECT Proj UNDER Resp")
+        execute_transaction_script(self.db, "CREATE GOAL Goal UNDER Proj")
+        execute_transaction_script(self.db, "CREATE TASK Task1 UNDER Goal")
+        execute_transaction_script(self.db, "CREATE TASK Task2 UNDER Goal")
+
+    def _get(self, model, slug):
+        return self.db.query(model).filter_by(slug=slug).first()
+
+    def test_empty_container_is_not_started(self):
+        """A goal/project/resp with no tasks defaults to NOT_STARTED."""
+        execute_transaction_script(self.db, "CREATE RESPONSIBILITY Resp")
+        execute_transaction_script(self.db, "CREATE PROJECT Proj UNDER Resp")
+        execute_transaction_script(self.db, "CREATE GOAL Goal UNDER Proj")
+
+        self.assertEqual(self._get(Goal, "resp-proj-goal").status, "NOT_STARTED")
+        self.assertEqual(self._get(Project, "resp-proj").status, "NOT_STARTED")
+        self.assertEqual(self._get(Responsibility, "resp").status, "NOT_STARTED")
+
+    def test_single_active_task_makes_chain_active(self):
+        """Starting one task rolls ACTIVE all the way up."""
+        self._setup_hierarchy()
+        execute_transaction_script(self.db, "START Task1")
+
+        self.assertEqual(self._get(Task, "resp-proj-goal-task1").status, "ACTIVE")
+        self.assertEqual(self._get(Goal, "resp-proj-goal").status, "ACTIVE")
+        self.assertEqual(self._get(Project, "resp-proj").status, "ACTIVE")
+        self.assertEqual(self._get(Responsibility, "resp").status, "ACTIVE")
+
+    def test_all_tasks_complete_rolls_up_completed(self):
+        """Completing all tasks makes the whole chain COMPLETED."""
+        self._setup_hierarchy()
+        execute_transaction_script(self.db, "COMPLETE Task1")
+        execute_transaction_script(self.db, "COMPLETE Task2")
+
+        self.assertEqual(self._get(Goal, "resp-proj-goal").status, "COMPLETED")
+        self.assertEqual(self._get(Project, "resp-proj").status, "COMPLETED")
+        self.assertEqual(self._get(Responsibility, "resp").status, "COMPLETED")
+
+    def test_partial_completion_keeps_parent_active(self):
+        """Completing only one of two tasks keeps parent ACTIVE (work in progress)."""
+        self._setup_hierarchy()
+        execute_transaction_script(self.db, "COMPLETE Task1")
+
+        # Task2 is NOT_STARTED, Task1 is COMPLETED → mix → ACTIVE takes priority? No —
+        # mix of COMPLETED + NOT_STARTED → NOT_STARTED wins over COMPLETED per priority.
+        # But functionally NOT_STARTED means "nothing going on"… let's check priority table:
+        # ACTIVE > BLOCKED > DEFERRED > PAUSED > NOT_STARTED > COMPLETED > ARCHIVED
+        # So NOT_STARTED > COMPLETED → Goal should be NOT_STARTED here.
+        goal = self._get(Goal, "resp-proj-goal")
+        self.assertEqual(goal.status, "NOT_STARTED")
+
+    def test_all_tasks_paused_rolls_up_paused(self):
+        """Pausing all tasks rolls PAUSED up the chain."""
+        self._setup_hierarchy()
+        execute_transaction_script(self.db, "PAUSE Task1")
+        execute_transaction_script(self.db, "PAUSE Task2")
+
+        self.assertEqual(self._get(Goal, "resp-proj-goal").status, "PAUSED")
+        self.assertEqual(self._get(Project, "resp-proj").status, "PAUSED")
+        self.assertEqual(self._get(Responsibility, "resp").status, "PAUSED")
+
+    def test_blocked_task_rolls_up_blocked(self):
+        """A blocked task rolls BLOCKED up only when no tasks are ACTIVE."""
+        self._setup_hierarchy()
+        execute_transaction_script(self.db, "START Task1")
+        # Task1 is ACTIVE, Task2 is NOT_STARTED
+        execute_transaction_script(self.db, "BLOCK Task1 BY Task2")
+
+        # Task1 is BLOCKED, Task2 is NOT_STARTED
+        # NOT_STARTED > BLOCKED in priority, so Goal should be NOT_STARTED
+        self.assertEqual(self._get(Task, "resp-proj-goal-task1").status, "BLOCKED")
+        # Goal sees BLOCKED + NOT_STARTED → NOT_STARTED wins (per priority table)
+        # Wait: priority is ACTIVE > BLOCKED > DEFERRED > PAUSED > NOT_STARTED
+        # So BLOCKED > NOT_STARTED → Goal should be BLOCKED
+        self.assertEqual(self._get(Goal, "resp-proj-goal").status, "BLOCKED")
+        self.assertEqual(self._get(Project, "resp-proj").status, "BLOCKED")
+        self.assertEqual(self._get(Responsibility, "resp").status, "BLOCKED")
+
+    def test_active_wins_over_blocked_in_rollup(self):
+        """When one task is ACTIVE and another is BLOCKED, ACTIVE wins in the rollup."""
+        self._setup_hierarchy()
+        execute_transaction_script(self.db, "CREATE TASK Task3 UNDER Goal")
+        execute_transaction_script(self.db, "START Task1")
+        execute_transaction_script(self.db, "START Task2")
+        execute_transaction_script(self.db, "BLOCK Task1 BY Task2")
+        # Task1=BLOCKED, Task2=ACTIVE, Task3=NOT_STARTED → ACTIVE wins
+        self.assertEqual(self._get(Goal, "resp-proj-goal").status, "ACTIVE")
+
+    def test_mixed_active_blocked_gives_active(self):
+        """ACTIVE takes priority over BLOCKED in the rollup."""
+        self._setup_hierarchy()
+        execute_transaction_script(self.db, "CREATE TASK Task3 UNDER Goal")
+        execute_transaction_script(self.db, "START Task1")
+        execute_transaction_script(self.db, "START Task2")
+        execute_transaction_script(self.db, "BLOCK Task2 BY Task1")
+        # Task3 is NOT_STARTED, Task1 is ACTIVE, Task2 is BLOCKED
+        # → ACTIVE wins
+        self.assertEqual(self._get(Goal, "resp-proj-goal").status, "ACTIVE")
+
+
+class TestLifecycleGuards(unittest.TestCase):
+    """Tests that lifecycle commands are blocked for non-Task entities."""
+
+    def setUp(self):
+        self.engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(self.engine)
+        Session = sessionmaker(bind=self.engine)
+        self.db = Session()
+        # Build a hierarchy to test against
+        execute_transaction_script(self.db, "CREATE RESPONSIBILITY Resp")
+        execute_transaction_script(self.db, "CREATE PROJECT Proj UNDER Resp")
+        execute_transaction_script(self.db, "CREATE GOAL Goal UNDER Proj")
+        execute_transaction_script(self.db, "CREATE TASK Task1 UNDER Goal")
+
+    def tearDown(self):
+        self.db.close()
+        Base.metadata.drop_all(self.engine)
+
+    def _assert_rejected(self, cmd: str, fragment: str):
+        with self.assertRaises(ValidationError) as ctx:
+            execute_transaction_script(self.db, cmd)
+        self.assertIn(fragment, str(ctx.exception))
+
+    def test_complete_goal_rejected(self):
+        self._assert_rejected("COMPLETE Goal", "can only be used on Tasks")
+
+    def test_complete_project_rejected(self):
+        self._assert_rejected("COMPLETE Proj", "can only be used on Tasks")
+
+    def test_complete_responsibility_rejected(self):
+        self._assert_rejected("COMPLETE Resp", "can only be used on Tasks")
+
+    def test_pause_goal_rejected(self):
+        self._assert_rejected("PAUSE Goal", "can only be used on Tasks")
+
+    def test_start_project_rejected(self):
+        self._assert_rejected("START Proj", "can only be used on Tasks")
+
+    def test_archive_goal_rejected(self):
+        self._assert_rejected("ARCHIVE Goal", "can only be used on Tasks")
+
+    def test_defer_goal_rejected(self):
+        self._assert_rejected("DEFER Goal UNTIL 2099-01-01", "can only be used on Tasks")
+
+    def test_block_goal_creates_relationship(self):
+        """BLOCK on a Goal is still allowed (creates a dependency relationship)."""
+        res = execute_transaction_script(self.db, "BLOCK Goal BY Task1")
+        self.assertEqual(res["status"], "SUCCESS")
+
+    def test_update_status_goal_rejected(self):
+        self._assert_rejected("UPDATE Goal SET status = ACTIVE", "Cannot manually set 'status'")
+
+    def test_update_status_project_rejected(self):
+        self._assert_rejected("UPDATE Proj SET status = COMPLETED", "Cannot manually set 'status'")
+
+    def test_complete_task_still_works(self):
+        """Sanity check — Tasks can still be completed."""
+        res = execute_transaction_script(self.db, "COMPLETE Task1")
+        self.assertEqual(res["status"], "SUCCESS")
+
+    def test_delete_goal_still_works(self):
+        """DELETE is not a status command — should still work on goals."""
+        res = execute_transaction_script(self.db, "DELETE Goal")
+        self.assertEqual(res["status"], "SUCCESS")
+

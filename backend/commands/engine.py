@@ -110,6 +110,15 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
                         curr = curr_ent.get("parent_slug") if curr_ent else None
 
         # Verify types and values for scheduled fields if updated
+        if "status" in updates:
+            if target_ent["type"] != "TASK":
+                entity_label = target_ent["type"].capitalize()
+                raise ValidationError(
+                    f"Cannot manually set 'status' on a {entity_label}. "
+                    f"Status of Goals, Projects, and Responsibilities is derived "
+                    f"automatically from their tasks."
+                )
+
         if "scheduled_from" in updates or "scheduled_to" in updates:
             if target_ent["type"] not in ["GOAL", "TASK"]:
                 raise ValidationError("Only Goals and Tasks can be scheduled.")
@@ -136,6 +145,15 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
         target_ent = state.get_entity(target)
         if not target_ent:
             raise ValidationError(f"Target entity '{target}' does not exist.")
+        # Lifecycle state commands only apply to Tasks.
+        # Goals, Projects, and Responsibilities derive their status from tasks automatically.
+        if op in ["COMPLETE", "ARCHIVE", "RESTORE", "PAUSE", "START"] and target_ent["type"] != "TASK":
+            entity_label = target_ent["type"].capitalize()
+            raise ValidationError(
+                f"'{op}' can only be used on Tasks. The {entity_label} '{target_ent['name']}' "
+                f"status is derived automatically from its tasks. "
+                f"Use {op} on the individual tasks instead."
+            )
         cmd["target"] = target_ent["slug"]
 
     elif op == "DEFER":
@@ -143,6 +161,12 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
         target_ent = state.get_entity(target)
         if not target_ent:
             raise ValidationError(f"Target entity '{target}' does not exist.")
+        if target_ent["type"] != "TASK":
+            entity_label = target_ent["type"].capitalize()
+            raise ValidationError(
+                f"'DEFER' can only be used on Tasks. The {entity_label} '{target_ent['name']}' "
+                f"status is derived automatically from its tasks."
+            )
         cmd["target"] = target_ent["slug"]
         
         until = cmd["until"]
