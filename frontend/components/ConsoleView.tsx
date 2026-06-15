@@ -9,6 +9,7 @@ interface SuggestionItem {
   type: "keyword" | "responsibility" | "project" | "goal" | "task" | "field" | "clause";
 }
 
+// Returns the position of the start of the current typing segment (for building suggestions).
 function getSegmentStartIndex(inputText: string): number {
   const upper = inputText.toUpperCase();
   
@@ -61,6 +62,69 @@ function getSegmentStartIndex(inputText: string): number {
   }
 
   return 0;
+}
+
+// Returns the position at which replacement should start when a suggestion is selected.
+// Unlike getSegmentStartIndex (which goes to the last separator for typing prefix matching),
+// this backs up to the start of the ENTIRE clause argument so entity names containing
+// OF/UNDER are fully replaced rather than partially appended.
+function getReplacementStartIndex(inputText: string): number {
+  const upper = inputText.toUpperCase();
+
+  // For CREATE ... UNDER <parent>, replace everything from right after UNDER
+  // Similarly for clause keywords that take a full entity name argument
+  const clauseKeywords = [" UNDER ", " WITH ", " BY ", " UNTIL ", " INTO "];
+  // These clauses take a single argument — we replace from clause end to input end
+  for (const kw of clauseKeywords) {
+    const idx = upper.lastIndexOf(kw);
+    if (idx !== -1) {
+      return idx + kw.length;
+    }
+  }
+
+  // For commands where the argument after the verb can itself contain OF context,
+  // back up to just after the verb.
+  const verbPrefixes = [
+    "COMPLETE ", "DELETE ", "START ", "PAUSE ", "ARCHIVE ", "RESTORE ",
+    "PROMOTE ", "DEMOTE ", "UNBLOCK ", "DEFER ", "BLOCK ", "UNBLOCK ",
+    "MOVE ", "SPLIT ", "MERGE ", "SCHEDULE ", "LINK ", "UNLINK ",
+    "UPDATE ", "WHY BLOCKED "
+  ];
+  for (const pref of verbPrefixes) {
+    if (upper.startsWith(pref)) {
+      // Check if there's a TO / FROM / AS clause after the target — only replace from after those
+      const clausesAfterTarget = [" TO ", " FROM ", " AS ", ", "];
+      let clauseIdx = -1;
+      for (const kw of clausesAfterTarget) {
+        const i = upper.lastIndexOf(kw);
+        if (i !== -1 && i > clauseIdx) clauseIdx = i + kw.length - 1;
+      }
+      if (clauseIdx !== -1) {
+        // Completing argument after a clause — replace from clause end
+        for (const kw of clausesAfterTarget) {
+          const i = upper.lastIndexOf(kw);
+          if (i !== -1 && i + kw.length - 1 === clauseIdx) {
+            return i + kw.length;
+          }
+        }
+      }
+      // Otherwise replace from right after the verb
+      return pref.length;
+    }
+  }
+
+  // CREATE commands — replace from after the CREATE <TYPE> prefix or after UNDER
+  const createPrefixes = [
+    "CREATE RESPONSIBILITY ", "CREATE PROJECT ", "CREATE GOAL ", "CREATE TASK "
+  ];
+  for (const pref of createPrefixes) {
+    if (upper.startsWith(pref)) {
+      return pref.length;
+    }
+  }
+
+  // Fallback: same as typing segment
+  return getSegmentStartIndex(inputText);
 }
 
 export default function ConsoleView() {
@@ -176,16 +240,20 @@ export default function ConsoleView() {
         const matchingChildren = entities.filter(e => e.name.toUpperCase() === childUpper);
         if (matchingChildren.length > 0) {
           const items: SuggestionItem[] = [];
-          const seenParents = new Set<string>();
+          const seenFull = new Set<string>();
 
           matchingChildren.forEach(child => {
             if (child.parentName) {
               const parentName = child.parentName;
-              if (parentName.toUpperCase().startsWith(parentUpper) && !seenParents.has(parentName)) {
-                seenParents.add(parentName);
-                const pEnt = entities.find(e => e.name === parentName);
-                const pType = pEnt ? pEnt.type.toLowerCase() as any : "project";
-                items.push({ value: parentName, type: pType });
+              if (parentName.toUpperCase().startsWith(parentUpper)) {
+                // Return the FULL "ChildName OF ParentName" form so that
+                // when selected it replaces the entire parent reference.
+                const fullForm = `${child.name} OF ${parentName}`;
+                if (!seenFull.has(fullForm)) {
+                  seenFull.add(fullForm);
+                  const typeLower = child.type.toLowerCase() as any;
+                  items.push({ value: fullForm, type: typeLower });
+                }
               }
             }
           });
@@ -502,8 +570,10 @@ export default function ConsoleView() {
   };
 
   const handleSelectSuggestion = (sug: SuggestionItem) => {
-    const segStart = getSegmentStartIndex(cmdInput);
-    const prefix = cmdInput.slice(0, segStart);
+    // Use the replacement-aware index so that entity names containing OF/UNDER
+    // are fully replaced rather than appended after a stray OF/UNDER separator.
+    const repStart = getReplacementStartIndex(cmdInput);
+    const prefix = cmdInput.slice(0, repStart);
     
     let completion = sug.value;
     
