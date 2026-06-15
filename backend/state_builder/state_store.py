@@ -31,8 +31,83 @@ class StateStore:
         self.relationships: List[Dict[str, Any]] = []
 
     def get_entity(self, slug_or_name: str) -> Optional[Dict[str, Any]]:
-        slug = slugify(slug_or_name)
-        return self.entities.get(slug)
+        if not slug_or_name:
+            return None
+            
+        slugified = slugify(slug_or_name)
+        
+        # 1. Split by context modifiers if present (-of- or -under-)
+        parts = None
+        if "-of-" in slugified:
+            parts = slugified.split("-of-", 1)
+        elif "-under-" in slugified:
+            parts = slugified.split("-under-", 1)
+            
+        if parts:
+            name_slug, parent_ref = parts[0], parts[1]
+            parent_ent = self.get_entity(parent_ref)
+            if parent_ent:
+                target_slug = f"{parent_ent['slug']}-{name_slug}"
+                return self.entities.get(target_slug)
+            return None
+
+        # 2. Try direct lookup by slugified input
+        if slugified in self.entities:
+            return self.entities[slugified]
+
+        # 3. Check for unique name/display name match
+        matches = [ent for ent in self.entities.values() if slugify(ent["name"]) == slugified]
+        if len(matches) == 1:
+            return matches[0]
+        elif len(matches) > 1:
+            # Ambiguity detected. Raise ValidationError dynamically to avoid circular import.
+            from backend.commands.engine import ValidationError
+            options = []
+            for m in matches:
+                p_slug = m.get("parent_slug")
+                p_name = self.entities[p_slug]["name"] if (p_slug and p_slug in self.entities) else None
+                if p_name:
+                    options.append(f"'{m['name']} OF {p_name}'")
+                else:
+                    options.append(f"'{m['name']}'")
+            raise ValidationError(
+                f"Ambiguous name reference '{slug_or_name}'. Did you mean one of these? {', '.join(options)}"
+            )
+
+        return None
+
+    def _update_entity_slug(self, old_slug: str, new_slug: str) -> None:
+        if old_slug == new_slug:
+            return
+        
+        # 1. Update the entity itself in self.entities
+        entity = self.entities.pop(old_slug, None)
+        if not entity:
+            return
+        entity["slug"] = new_slug
+        self.entities[new_slug] = entity
+        
+        # 2. Update relationships
+        for rel in self.relationships:
+            if rel["source_slug"] == old_slug:
+                rel["source_slug"] = new_slug
+            if rel["target_slug"] == old_slug:
+                rel["target_slug"] = new_slug
+
+        # 3. Update deferred_condition references
+        for ent in self.entities.values():
+            cond = ent.get("deferred_condition")
+            if cond and cond.startswith(f"{old_slug}."):
+                ent["deferred_condition"] = cond.replace(f"{old_slug}.", f"{new_slug}.", 1)
+                
+        # 4. Find all child entities (where parent_slug == old_slug) and recursively update them
+        children = [ent for ent in self.entities.values() if ent.get("parent_slug") == old_slug]
+        for child in children:
+            child_old_slug = child["slug"]
+            child["parent_slug"] = new_slug
+            # Re-generate child's unique slug using new parent_slug
+            child_new_slug = f"{new_slug}-{slugify(child['name'])}"
+            self._update_entity_slug(child_old_slug, child_new_slug)
 
     def apply_event(self, op: str, target: str, payload: dict) -> None:
         """
@@ -43,7 +118,7 @@ class StateStore:
 
         if op == "CREATE_RESPONSIBILITY":
             name = payload.get("name", target)
-            slug = slugify(name)
+            slug = target_slug
             self.entities[slug] = {
                 "id": payload.get("id"),
                 "type": "RESPONSIBILITY",
@@ -59,7 +134,10 @@ class StateStore:
 
         elif op == "CREATE_PROJECT":
             name = payload.get("name", target)
-            slug = slugify(name)
+            slug = target_slug
+            parent_ref = payload.get("parent")
+            p_ent = self.get_entity(parent_ref) if parent_ref else None
+            parent_slug = p_ent["slug"] if p_ent else None
             self.entities[slug] = {
                 "id": payload.get("id"),
                 "type": "PROJECT",
@@ -67,7 +145,7 @@ class StateStore:
                 "slug": slug,
                 "status": "NOT_STARTED",
                 "base_status": "NOT_STARTED",
-                "parent_slug": slugify(payload.get("parent", "")),
+                "parent_slug": parent_slug,
                 "priority": "MEDIUM",
                 "deferred_until": None,
                 "deferred_condition": None
@@ -75,7 +153,10 @@ class StateStore:
 
         elif op == "CREATE_GOAL":
             name = payload.get("name", target)
-            slug = slugify(name)
+            slug = target_slug
+            parent_ref = payload.get("parent")
+            p_ent = self.get_entity(parent_ref) if parent_ref else None
+            parent_slug = p_ent["slug"] if p_ent else None
             self.entities[slug] = {
                 "id": payload.get("id"),
                 "type": "GOAL",
@@ -83,7 +164,7 @@ class StateStore:
                 "slug": slug,
                 "status": "NOT_STARTED",
                 "base_status": "NOT_STARTED",
-                "parent_slug": slugify(payload.get("parent", "")),
+                "parent_slug": parent_slug,
                 "priority": "MEDIUM",
                 "deferred_until": None,
                 "deferred_condition": None,
@@ -93,7 +174,10 @@ class StateStore:
 
         elif op == "CREATE_TASK":
             name = payload.get("name", target)
-            slug = slugify(name)
+            slug = target_slug
+            parent_ref = payload.get("parent")
+            p_ent = self.get_entity(parent_ref) if parent_ref else None
+            parent_slug = p_ent["slug"] if p_ent else None
             self.entities[slug] = {
                 "id": payload.get("id"),
                 "type": "TASK",
@@ -101,7 +185,7 @@ class StateStore:
                 "slug": slug,
                 "status": "NOT_STARTED",
                 "base_status": "NOT_STARTED",
-                "parent_slug": slugify(payload.get("parent", "")) if payload.get("parent") else None,
+                "parent_slug": parent_slug,
                 "priority": "MEDIUM",
                 "deferred_until": None,
                 "deferred_condition": None,
@@ -118,36 +202,40 @@ class StateStore:
                 if key == "name":
                     old_slug = entity["slug"]
                     new_name = val
-                    new_slug = slugify(new_name)
+                    parent_slug = entity.get("parent_slug")
+                    new_slug = f"{parent_slug}-{slugify(new_name)}" if parent_slug else slugify(new_name)
                     entity["name"] = new_name
-                    entity["slug"] = new_slug
-                    # Re-map in dictionary
-                    self.entities[new_slug] = self.entities.pop(old_slug)
-                    # Update all child relationships and parent pointers
-                    for ent in self.entities.values():
-                        if ent.get("parent_slug") == old_slug:
-                            ent["parent_slug"] = new_slug
-                    for rel in self.relationships:
-                        if rel["source_slug"] == old_slug:
-                            rel["source_slug"] = new_slug
-                        if rel["target_slug"] == old_slug:
-                            rel["target_slug"] = new_slug
+                    self._update_entity_slug(old_slug, new_slug)
                     target_slug = new_slug
+                    entity = self.entities.get(new_slug) # retrieve from new key
                 elif key == "parent":
-                    entity["parent_slug"] = slugify(val) if val else None
+                    old_slug = entity["slug"]
+                    p_ent = self.get_entity(val) if val else None
+                    new_parent_slug = p_ent["slug"] if p_ent else None
+                    new_slug = f"{new_parent_slug}-{slugify(entity['name'])}" if new_parent_slug else slugify(entity['name'])
+                    entity["parent_slug"] = new_parent_slug
+                    self._update_entity_slug(old_slug, new_slug)
+                    target_slug = new_slug
+                    entity = self.entities.get(new_slug) # retrieve from new key
                 elif key == "priority":
-                    entity["priority"] = val.upper()
+                    if entity:
+                        entity["priority"] = val.upper()
                 elif key == "status":
-                    entity["status"] = val.upper()
-                    entity["base_status"] = val.upper()
+                    if entity:
+                        entity["status"] = val.upper()
+                        entity["base_status"] = val.upper()
                 elif key == "deferred_until":
-                    entity["deferred_until"] = val
+                    if entity:
+                        entity["deferred_until"] = val
                 elif key == "deferred_condition":
-                    entity["deferred_condition"] = val
+                    if entity:
+                        entity["deferred_condition"] = val
                 elif key == "scheduled_from":
-                    entity["scheduled_from"] = None if (not val or val.lower() == "null") else val
+                    if entity:
+                        entity["scheduled_from"] = None if (not val or val.lower() == "null") else val
                 elif key == "scheduled_to":
-                    entity["scheduled_to"] = None if (not val or val.lower() == "null") else val
+                    if entity:
+                        entity["scheduled_to"] = None if (not val or val.lower() == "null") else val
 
         elif op == "COMPLETE":
             entity = self.entities.get(target_slug)
@@ -158,15 +246,25 @@ class StateStore:
         elif op == "DELETE":
             entity = self.entities.get(target_slug)
             if entity:
-                entity["status"] = "DELETED"
-                entity["base_status"] = "DELETED"
-                # Remove target_slug from entities
-                self.entities.pop(target_slug, None)
-                # Remove relationships involving target_slug
-                self.relationships = [
-                    r for r in self.relationships
-                    if r["source_slug"] != target_slug and r["target_slug"] != target_slug
-                ]
+                # Helper to recursively collect all descendant slugs
+                def get_descendants(slug):
+                    desc = []
+                    for ent in self.entities.values():
+                        if ent.get("parent_slug") == slug:
+                            desc.append(ent["slug"])
+                            desc.extend(get_descendants(ent["slug"]))
+                    return desc
+                
+                to_delete = [target_slug] + get_descendants(target_slug)
+                for s in to_delete:
+                    if s in self.entities:
+                        self.entities[s]["status"] = "DELETED"
+                        self.entities[s]["base_status"] = "DELETED"
+                        self.entities.pop(s, None)
+                    self.relationships = [
+                        r for r in self.relationships
+                        if r["source_slug"] != s and r["target_slug"] != s
+                    ]
 
         elif op == "ARCHIVE":
             entity = self.entities.get(target_slug)
@@ -231,7 +329,8 @@ class StateStore:
                 entity["base_status"] = "DEFERRED"
 
         elif op == "BLOCK":
-            blocker_slug = slugify(payload.get("blocker", ""))
+            p_ent = self.get_entity(payload.get("blocker", ""))
+            blocker_slug = p_ent["slug"] if p_ent else slugify(payload.get("blocker", ""))
             # Create blocker relationship
             self.relationships.append({
                 "source_slug": blocker_slug,
@@ -247,8 +346,10 @@ class StateStore:
             ]
 
         elif op == "LINK":
-            src = slugify(payload.get("source", ""))
-            tgt = slugify(payload.get("target", ""))
+            src_ent = self.get_entity(payload.get("source", ""))
+            tgt_ent = self.get_entity(payload.get("target", ""))
+            src = src_ent["slug"] if src_ent else slugify(payload.get("source", ""))
+            tgt = tgt_ent["slug"] if tgt_ent else slugify(payload.get("target", ""))
             t = payload.get("type", "related_to")
             # Avoid duplicate relationships
             exists = any(
@@ -263,8 +364,10 @@ class StateStore:
                 })
 
         elif op == "UNLINK":
-            src = slugify(payload.get("source", ""))
-            tgt = slugify(payload.get("target", ""))
+            src_ent = self.get_entity(payload.get("source", ""))
+            tgt_ent = self.get_entity(payload.get("target", ""))
+            src = src_ent["slug"] if src_ent else slugify(payload.get("source", ""))
+            tgt = tgt_ent["slug"] if tgt_ent else slugify(payload.get("target", ""))
             self.relationships = [
                 r for r in self.relationships
                 if not (r["source_slug"] == src and r["target_slug"] == tgt)
@@ -273,7 +376,12 @@ class StateStore:
         elif op == "MOVE":
             entity = self.entities.get(target_slug)
             if entity:
-                entity["parent_slug"] = slugify(payload.get("parent", ""))
+                old_slug = entity["slug"]
+                p_ent = self.get_entity(payload.get("parent", ""))
+                new_parent_slug = p_ent["slug"] if p_ent else None
+                new_slug = f"{new_parent_slug}-{slugify(entity['name'])}" if new_parent_slug else slugify(entity['name'])
+                entity["parent_slug"] = new_parent_slug
+                self._update_entity_slug(old_slug, new_slug)
 
         elif op == "SCHEDULE":
             entity = self.entities.get(target_slug)
@@ -295,7 +403,7 @@ class StateStore:
 
             # Create new tasks
             for name in names:
-                n_slug = slugify(name)
+                n_slug = f"{parent_slug}-{slugify(name)}" if parent_slug else slugify(name)
                 self.entities[n_slug] = {
                     "id": str(uuid.uuid4()) if "ids" not in payload else payload["ids"].get(name),
                     "type": entity_type,
@@ -332,16 +440,15 @@ class StateStore:
             ]
 
         elif op == "MERGE":
-            sources = [slugify(s) for s in payload.get("sources", [])]
-            name = payload.get("target", target)
-            tgt_slug = slugify(name)
+            sources_ents = [self.get_entity(s) for s in payload.get("sources", [])]
+            sources = [ent["slug"] for ent in sources_ents if ent]
+            name = payload.get("name", target)
             
             # Find the parent and type from one of the active sources
             parent_slug = None
             entity_type = "TASK"
             priority = "MEDIUM"
-            for src in sources:
-                ent = self.entities.get(src)
+            for ent in sources_ents:
                 if ent:
                     parent_slug = ent.get("parent_slug")
                     entity_type = ent.get("type")
@@ -352,6 +459,7 @@ class StateStore:
             for src in sources:
                 self.entities.pop(src, None)
 
+            tgt_slug = target_slug
             # Create target
             self.entities[tgt_slug] = {
                 "id": payload.get("id"),

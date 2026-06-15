@@ -112,11 +112,15 @@ def execute_query(db: Session, cmd: Dict[str, Any]) -> Dict[str, Any]:
 
     elif op == "WHY_BLOCKED":
         target = cmd["target"]
-        target_slug = slugify(target)
         
         # We need an in-memory StateStore built from the db elements
         from backend.state_builder.state_store import rebuild_projections
         store = rebuild_projections(db)
+        
+        target_ent = store.get_entity(target)
+        if not target_ent:
+            raise ValueError(f"Target entity '{target}' does not exist.")
+        target_slug = target_ent["slug"]
         
         tree_lines = build_blocker_tree(store, target_slug)
         tree_str = "\n".join(tree_lines)

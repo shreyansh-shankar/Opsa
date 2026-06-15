@@ -59,29 +59,37 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
     
     if op.startswith("CREATE_"):
         name = cmd["name"]
-        slug = slugify(name)
-        if not slug:
-            raise ValidationError("Entity name cannot be empty.")
-        if state.get_entity(slug):
-            raise ValidationError(f"Entity with name/slug '{name}' already exists.")
-
         parent = cmd.get("parent")
+        parent_ent = None
         if parent:
             parent_ent = state.get_entity(parent)
             if not parent_ent:
                 raise ValidationError(f"Parent entity '{parent}' does not exist.")
-            
+            slug = f"{parent_ent['slug']}-{slugify(name)}"
+        else:
+            slug = slugify(name)
+
+        if not slug:
+            raise ValidationError("Entity name cannot be empty.")
+        if state.get_entity(slug):
+            raise ValidationError(f"Entity with name/slug '{name}' already exists under parent '{parent}'." if parent else f"Entity with name/slug '{name}' already exists.")
+
+        if parent_ent:
             # Type validations based on hierarchy rules
             if op == "CREATE_PROJECT" and parent_ent["type"] != "RESPONSIBILITY":
                 raise ValidationError(f"Project parent '{parent}' must be a RESPONSIBILITY.")
             elif op == "CREATE_GOAL" and parent_ent["type"] != "PROJECT":
                 raise ValidationError(f"Goal parent '{parent}' must be a PROJECT.")
+        
+        # Save the resolved unique slug as target
+        cmd["target"] = slug
 
     elif op == "UPDATE":
         target = cmd["target"]
         target_ent = state.get_entity(target)
         if not target_ent:
             raise ValidationError(f"Target entity '{target}' does not exist.")
+        cmd["target"] = target_ent["slug"]
         
         updates = cmd.get("updates", {})
         for field, val in updates.items():
@@ -90,8 +98,10 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
                     p_ent = state.get_entity(val)
                     if not p_ent:
                         raise ValidationError(f"New parent '{val}' does not exist.")
+                    p_slug = p_ent["slug"]
+                    updates["parent"] = p_slug
+                    
                     # Cycle check for parent pointer
-                    p_slug = slugify(val)
                     curr = p_slug
                     while curr:
                         if curr == target_ent["slug"]:
@@ -126,12 +136,14 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
         target_ent = state.get_entity(target)
         if not target_ent:
             raise ValidationError(f"Target entity '{target}' does not exist.")
+        cmd["target"] = target_ent["slug"]
 
     elif op == "DEFER":
         target = cmd["target"]
         target_ent = state.get_entity(target)
         if not target_ent:
             raise ValidationError(f"Target entity '{target}' does not exist.")
+        cmd["target"] = target_ent["slug"]
         
         until = cmd["until"]
         # Check condition if it has .Completed format
@@ -142,6 +154,7 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
             cond_ent = state.get_entity(cond_ent_name)
             if not cond_ent:
                 raise ValidationError(f"Deferral condition entity '{cond_ent_name}' does not exist.")
+            cmd["until"] = f"{cond_ent['slug']}.Completed"
 
     elif op == "BLOCK":
         target = cmd["target"]
@@ -154,6 +167,9 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
             raise ValidationError(f"Blocker entity '{blocker}' does not exist.")
         if target_ent["slug"] == blocker_ent["slug"]:
             raise ValidationError("An entity cannot block itself.")
+
+        cmd["target"] = target_ent["slug"]
+        cmd["blocker"] = blocker_ent["slug"]
 
         # Cycle check
         if check_cycle(state.entities, state.relationships, blocker_ent["slug"], target_ent["slug"], "blocks"):
@@ -172,6 +188,9 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
         if src_ent["slug"] == tgt_ent["slug"]:
             raise ValidationError("Cannot link an entity to itself.")
 
+        cmd["source"] = src_ent["slug"]
+        cmd["target"] = tgt_ent["slug"]
+
         # Cycle check if linking depends_on or blocks
         if rel_type in ["blocks", "depends_on"]:
             if check_cycle(state.entities, state.relationships, src_ent["slug"], tgt_ent["slug"], rel_type):
@@ -187,6 +206,9 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
         if not tgt_ent:
             raise ValidationError(f"Target entity '{tgt}' does not exist.")
 
+        cmd["source"] = src_ent["slug"]
+        cmd["target"] = tgt_ent["slug"]
+
     elif op == "MOVE":
         target = cmd["target"]
         parent = cmd["parent"]
@@ -198,7 +220,7 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
             raise ValidationError(f"Parent entity '{parent}' does not exist.")
         
         # Cycle check
-        p_slug = slugify(parent)
+        p_slug = parent_ent["slug"]
         curr = p_slug
         while curr:
             if curr == target_ent["slug"]:
@@ -206,16 +228,23 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
             curr_ent = state.get_entity(curr)
             curr = curr_ent.get("parent_slug") if curr_ent else None
 
+        cmd["target"] = target_ent["slug"]
+        cmd["parent"] = parent_ent["slug"]
+
     elif op == "SPLIT":
         target = cmd["target"]
         target_ent = state.get_entity(target)
         if not target_ent:
             raise ValidationError(f"Target entity '{target}' does not exist.")
+        
+        cmd["target"] = target_ent["slug"]
+        
         names = cmd.get("names", [])
         if not names:
             raise ValidationError("SPLIT requires at least one target name.")
         for name in names:
-            slug = slugify(name)
+            parent_slug = target_ent.get("parent_slug")
+            slug = f"{parent_slug}-{slugify(name)}" if parent_slug else slugify(name)
             if state.get_entity(slug) and slug != target_ent["slug"]:
                 raise ValidationError(f"Entity '{name}' already exists.")
 
@@ -224,14 +253,27 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
         target = cmd["target"]
         if not sources or len(sources) < 2:
             raise ValidationError("MERGE requires at least two source entities.")
+        sources_ents = []
         for src in sources:
             src_ent = state.get_entity(src)
             if not src_ent:
                 raise ValidationError(f"Source entity '{src}' does not exist.")
+            sources_ents.append(src_ent)
         
-        tgt_slug = slugify(target)
-        if state.get_entity(tgt_slug) and tgt_slug not in [slugify(s) for s in sources]:
+        # Find parent from one of the active sources
+        parent_slug = None
+        for ent in sources_ents:
+            if ent:
+                parent_slug = ent.get("parent_slug")
+                break
+                
+        tgt_slug = f"{parent_slug}-{slugify(target)}" if parent_slug else slugify(target)
+        if state.get_entity(tgt_slug) and tgt_slug not in [ent["slug"] for ent in sources_ents if ent]:
             raise ValidationError(f"Target entity '{target}' already exists.")
+            
+        cmd["name"] = target
+        cmd["target"] = tgt_slug
+        cmd["sources"] = [ent["slug"] for ent in sources_ents]
 
     elif op == "SCHEDULE":
         target = cmd["target"]
@@ -240,6 +282,8 @@ def validate_command(cmd: Dict[str, Any], state: StateStore) -> None:
             raise ValidationError(f"Target entity '{target}' does not exist.")
         if target_ent["type"] not in ["GOAL", "TASK"]:
             raise ValidationError("Only Goals and Tasks can be scheduled.")
+        
+        cmd["target"] = target_ent["slug"]
         
         start_str = cmd.get("scheduled_from")
         end_str = cmd.get("scheduled_to")
