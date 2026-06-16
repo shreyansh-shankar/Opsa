@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import { useStore, StateNode } from "@/store/useStore";
-import CommandPalette from "@/components/CommandPalette";
+import OpsaTerminal from "@/components/OpsaTerminal";
 import MissionView from "@/components/MissionView";
 import GoalView from "@/components/GoalView";
 import ResponsibilityView from "@/components/ResponsibilityView";
@@ -46,7 +46,7 @@ export default function Home() {
   // Extract total counts for stats
   const getStats = () => {
     if (!stateTree) return { responsibilities: 0, projects: 0, goals: 0, tasks: 0 };
-    
+
     let responsibilities = stateTree.responsibilities.length;
     let projects = stateTree.orphan_projects.length;
     let goals = stateTree.orphan_goals.length;
@@ -81,7 +81,8 @@ export default function Home() {
   const ActiveComponent = tabs.find((t) => t.id === activeTab)?.component || MissionView;
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F5F0E6] text-[#2c312e] pb-12 selection:bg-[#7A8C74]/30 selection:text-[#2c312e]">
+    // pb-28 reserves space at the bottom for the fixed OpsaTerminal bar
+    <div className="flex flex-col min-h-screen bg-[#F5F0E6] text-[#2c312e] pb-32 selection:bg-[#7A8C74]/30 selection:text-[#2c312e]">
       {/* 1. Header Banner */}
       <header className="border-b border-[#e3dbcd] bg-[#FAF7F2]/85 sticky top-0 z-40 backdrop-blur-md">
         <div className="w-full px-6 py-4 flex items-center justify-between">
@@ -160,36 +161,20 @@ export default function Home() {
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-center">
                   <div className="bg-[#FAF7F2] border border-[#e3dbcd] p-2 rounded-xl flex flex-col">
-                    <span className="text-sm font-mono font-bold text-[#2c312e]">
-                      {stats.responsibilities}
-                    </span>
-                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">
-                      Domains
-                    </span>
+                    <span className="text-sm font-mono font-bold text-[#2c312e]">{stats.responsibilities}</span>
+                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">Domains</span>
                   </div>
                   <div className="bg-[#FAF7F2] border border-[#e3dbcd] p-2 rounded-xl flex flex-col">
-                    <span className="text-sm font-mono font-bold text-[#2c312e]">
-                      {stats.projects}
-                    </span>
-                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">
-                      Projects
-                    </span>
+                    <span className="text-sm font-mono font-bold text-[#2c312e]">{stats.projects}</span>
+                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">Projects</span>
                   </div>
                   <div className="bg-[#FAF7F2] border border-[#e3dbcd] p-2 rounded-xl flex flex-col">
-                    <span className="text-sm font-mono font-bold text-[#2c312e]">
-                      {stats.goals}
-                    </span>
-                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">
-                      Goals
-                    </span>
+                    <span className="text-sm font-mono font-bold text-[#2c312e]">{stats.goals}</span>
+                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">Goals</span>
                   </div>
                   <div className="bg-[#FAF7F2] border border-[#e3dbcd] p-2 rounded-xl flex flex-col">
-                    <span className="text-sm font-mono font-bold text-[#2c312e]">
-                      {stats.tasks}
-                    </span>
-                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">
-                      Tasks
-                    </span>
+                    <span className="text-sm font-mono font-bold text-[#2c312e]">{stats.tasks}</span>
+                    <span className="text-[8px] text-[#67736b] font-mono uppercase tracking-wide">Tasks</span>
                   </div>
                 </div>
               </div>
@@ -210,11 +195,13 @@ export default function Home() {
 
           {/* Central Active View Workspace */}
           <div className="lg:col-span-3 flex flex-col gap-6">
-            <CommandPalette />
             <ActiveComponent />
           </div>
         </div>
       </main>
+
+      {/* 3. Bottom-fixed Opsa Terminal — present on every view */}
+      <OpsaTerminal />
     </div>
   );
 }
