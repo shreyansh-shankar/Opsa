@@ -533,9 +533,9 @@ export default function OpsaTerminal() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[#e3dbcd] bg-[#FAF7F2]/95 backdrop-blur-md shadow-[0_-4px_24px_rgba(0,0,0,0.07)] pb-3">
+    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[#e3dbcd] bg-[#FAF7F2]/95 backdrop-blur-md shadow-[0_-4px_24px_rgba(0,0,0,0.07)] px-4 pb-6">
       {/* Terminal bar header */}
-      <div className="flex items-center justify-between px-4 py-1.5 border-b border-[#e3dbcd]/60 bg-[#F5F0E6]/50">
+      <div className="flex items-center justify-between py-1.5 border-b border-[#e3dbcd]/60 bg-[#F5F0E6]/50 -mx-4 px-4 mb-0">
         <div className="flex items-center gap-2">
           <Terminal className="h-3.5 w-3.5 text-[#7A8C74] animate-pulse" />
           <span className="text-[10px] font-mono font-bold text-[#7A8C74] uppercase tracking-widest">opsa-terminal</span>
@@ -575,12 +575,12 @@ export default function OpsaTerminal() {
 
       {/* Collapsible input body */}
       {isExpanded && (
-        <form ref={formRef} onSubmit={handleSubmit} className="relative px-3 py-2">
+        <form ref={formRef} onSubmit={handleSubmit} className="relative pt-2">
           {/* Suggestions popover — floats above the terminal */}
           {showSuggestions && suggestions.length > 0 && (
             <div
               ref={suggestionListRef}
-              className="absolute bottom-full left-3 mb-1 w-[calc(100%-1.5rem)] max-h-[240px] overflow-y-auto bg-[#FAF7F2]/98 backdrop-blur-md border border-[#e3dbcd] rounded-xl shadow-xl z-50 flex flex-col p-1.5 font-mono text-[11px]"
+              className="absolute bottom-full left-0 mb-1 w-full max-h-[240px] overflow-y-auto bg-[#FAF7F2]/98 backdrop-blur-md border border-[#e3dbcd] rounded-xl shadow-xl z-50 flex flex-col p-1.5 font-mono text-[11px]"
             >
               {suggestions.map((sug, idx) => (
                 <button
