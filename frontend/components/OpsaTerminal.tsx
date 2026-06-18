@@ -338,6 +338,42 @@ export default function OpsaTerminal() {
         if (cmd === "SCHEDULE ") {
           const hasFrom = upper.includes(" FROM ");
           const hasTo = upper.includes(" TO ");
+
+          const natlangTokens: SuggestionItem[] = [
+            { value: "NOW", type: "keyword" },
+            { value: "today", type: "keyword" },
+            { value: "tomorrow", type: "keyword" },
+            { value: "next monday", type: "keyword" },
+            { value: "next tuesday", type: "keyword" },
+            { value: "next wednesday", type: "keyword" },
+            { value: "next thursday", type: "keyword" },
+            { value: "next friday", type: "keyword" },
+            { value: "this monday", type: "keyword" },
+            { value: "this tuesday", type: "keyword" },
+            { value: "this wednesday", type: "keyword" },
+            { value: "this thursday", type: "keyword" },
+            { value: "this friday", type: "keyword" },
+          ];
+          const durationTokens: SuggestionItem[] = [
+            { value: "1 hour", type: "keyword" },
+            { value: "2 hours", type: "keyword" },
+            { value: "3 hours", type: "keyword" },
+            { value: "6 hours", type: "keyword" },
+            { value: "12 hours", type: "keyword" },
+            { value: "1 day", type: "keyword" },
+            { value: "3 days", type: "keyword" },
+            { value: "5 days", type: "keyword" },
+            { value: "1 week", type: "keyword" },
+            { value: "2 weeks", type: "keyword" },
+          ];
+
+          const filterNatlang = (prefix: string): SuggestionItem[] => {
+            const p = prefix.trim().toUpperCase();
+            return [...natlangTokens, ...durationTokens].filter(s =>
+              s.value.toUpperCase().startsWith(p)
+            );
+          };
+
           if (!hasFrom) {
             const words = trimmed.split(" ");
             const lastWord = words[words.length - 1].toUpperCase();
@@ -350,8 +386,9 @@ export default function OpsaTerminal() {
             const words = trimmed.split(" ");
             const lastWord = words[words.length - 1].toUpperCase();
             if ("TO".startsWith(lastWord)) return [{ value: "TO", type: "clause" }];
+            return filterNatlang(currentSegUpper);
           }
-          return [];
+          return filterNatlang(currentSegUpper);
         }
         return filterEntities(afterCmd);
       }

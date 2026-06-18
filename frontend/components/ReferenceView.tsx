@@ -118,9 +118,15 @@ export default function ReferenceView() {
         },
         {
           cmd: "SCHEDULE <target> FROM <start_datetime> TO <end_datetime>",
-          desc: "Schedules a Goal or Task for a specific date/time range. Supported formats: YYYY-MM-DD HH:MM:SS, YYYY-MM-DD HH:MM, YYYY-MM-DD.",
+          desc: "Schedules a Goal or Task for a specific date/time range. Supports ISO formats and natural language dates.",
           example: "SCHEDULE Launch FROM 2026-06-15 09:00 TO 2026-06-15 18:00",
           notes: "To clear schedule, run: SCHEDULE <target> FROM null TO null"
+        },
+        {
+          cmd: "SCHEDULE <target> FROM <natural_date> TO <natural_date>",
+          desc: "Schedule using plain English date/time expressions. Tokens are resolved server-side to UTC.",
+          example: "SCHEDULE Module1 FROM tomorrow TO +3d",
+          notes: "Supported tokens: NOW (rounded to 15 min), today, tomorrow, next monday/tuesday/etc., this friday, HH:MM (today at time), +Nd / +N days / +N hours, natural month-day formats (Jun 18)"
         },
         {
           cmd: "LINK <source> TO <target> AS <type>",

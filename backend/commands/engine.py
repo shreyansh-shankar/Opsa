@@ -346,10 +346,57 @@ def resolve_datetime_str(val: Optional[str], is_end: bool = False, start_str: Op
 
     val_stripped = val.strip()
 
-    # Check for "NOW"
-    if val_stripped.upper() == "NOW":
-        dt = round_dt_to_15_mins(datetime.now())
+    # Check for natural language terms
+    val_upper = val_stripped.upper()
+    now_utc = datetime.now(timezone.utc)
+
+    if val_upper == "NOW":
+        dt = round_dt_to_15_mins(now_utc)
         return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    if val_upper == "TODAY":
+        dt = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    if val_upper == "TOMORROW":
+        dt = now_utc.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # "next monday", "next tuesday", etc.
+    next_day_match = re.match(r"^NEXT\s+(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)$", val_upper)
+    if next_day_match:
+        day_name = next_day_match.group(1)
+        day_map = {"MONDAY": 0, "TUESDAY": 1, "WEDNESDAY": 2, "THURSDAY": 3, "FRIDAY": 4, "SATURDAY": 5, "SUNDAY": 6}
+        target_weekday = day_map[day_name]
+        current_weekday = now_utc.weekday()
+        days_ahead = target_weekday - current_weekday
+        if days_ahead <= 0:
+            days_ahead += 7
+        dt = now_utc.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days_ahead)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # "this monday", "this tuesday", etc. — current or upcoming weekday
+    this_day_match = re.match(r"^THIS\s+(MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY|SUNDAY)$", val_upper)
+    if this_day_match:
+        day_name = this_day_match.group(1)
+        day_map = {"MONDAY": 0, "TUESDAY": 1, "WEDNESDAY": 2, "THURSDAY": 3, "FRIDAY": 4, "SATURDAY": 5, "SUNDAY": 6}
+        target_weekday = day_map[day_name]
+        current_weekday = now_utc.weekday()
+        days_ahead = target_weekday - current_weekday
+        if days_ahead < 0:
+            days_ahead += 7
+        dt = now_utc.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=days_ahead)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # "4:30" or "14:30" — today at that time (rounded to 15 min)
+    time_only_match = re.match(r"^(\d{1,2}):(\d{2})$", val_stripped)
+    if time_only_match:
+        h = int(time_only_match.group(1))
+        m = int(time_only_match.group(2))
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            dt = now_utc.replace(hour=h, minute=m, second=0, microsecond=0)
+            dt = round_dt_to_15_mins(dt)
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
 
     # Check if is a duration offset (e.g. "5 days", "72 hours", "10 days")
     duration_match = re.match(r"^(\d+)\s*(day|days|hour|hours|wk|wks|week|weeks|min|mins|minute|minutes)$", val_stripped, re.IGNORECASE)
@@ -372,9 +419,9 @@ def resolve_datetime_str(val: Optional[str], is_end: bool = False, start_str: Op
                 except ValueError:
                     pass
             if not start_dt:
-                start_dt = round_dt_to_15_mins(datetime.now())
+                start_dt = round_dt_to_15_mins(now_utc)
         else:
-            start_dt = round_dt_to_15_mins(datetime.now())
+            start_dt = round_dt_to_15_mins(now_utc)
             
         if "day" in unit:
             end_dt = start_dt + timedelta(days=qty)
@@ -391,7 +438,7 @@ def resolve_datetime_str(val: Optional[str], is_end: bool = False, start_str: Op
     # Check if a pure day digit (e.g. "15" or "18")
     if val_stripped.isdigit():
         day_num = int(val_stripped)
-        now = datetime.now()
+        now = now_utc
         _, last_day = calendar.monthrange(now.year, now.month)
         if day_num < 1 or day_num > last_day:
             raise ValidationError(f"Day number {day_num} is out of bounds for the current month.")
@@ -426,7 +473,7 @@ def resolve_datetime_str(val: Optional[str], is_end: bool = False, start_str: Op
             mon_name = m.group(1).lower()
             day_num = int(m.group(2))
             if mon_name in months_dict:
-                now = datetime.now()
+                now = now_utc
                 parsed_dt = datetime(now.year, months_dict[mon_name], day_num)
         # "15 June" / "15 Jun"
         m2 = re.match(r"^(\d+)\s+([a-zA-Z]+)$", val_clean, re.IGNORECASE)
@@ -434,7 +481,7 @@ def resolve_datetime_str(val: Optional[str], is_end: bool = False, start_str: Op
             day_num = int(m2.group(1))
             mon_name = m2.group(2).lower()
             if mon_name in months_dict:
-                now = datetime.now()
+                now = now_utc
                 parsed_dt = datetime(now.year, months_dict[mon_name], day_num)
 
     if not parsed_dt:

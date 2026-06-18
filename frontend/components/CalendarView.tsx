@@ -13,7 +13,7 @@ import {
   Copy,
   Check,
   CalendarDays,
-  CalendarRange
+  CalendarRange,
 } from "lucide-react";
 
 export default function CalendarView() {
@@ -22,7 +22,47 @@ export default function CalendarView() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [filterType, setFilterType] = useState<"GOAL" | "TASK">("GOAL");
+  const [filterType, setFilterType] = useState<"GOAL" | "TASK">("TASK");
+
+
+
+  // UTC to local time conversion for display
+  const formatUTCLocal = (utcStr: string | null | undefined): string => {
+    if (!utcStr) return "";
+    const d = new Date(utcStr + "Z");
+    const h = String(d.getHours()).padStart(2, "0");
+    const m = String(d.getMinutes()).padStart(2, "0");
+    return `${h}:${m}`;
+  };
+
+  const formatUTCLocalDate = (utcStr: string | null | undefined): string => {
+    if (!utcStr) return "";
+    const d = new Date(utcStr + "Z");
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
+
+  const formatUTCLocalDateTime = (utcStr: string | null | undefined): string => {
+    if (!utcStr) return "";
+    const d = new Date(utcStr + "Z");
+    return d.toLocaleString(undefined, {
+      weekday: "short", month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit"
+    });
+  };
+
+  // Get decimal hour in local time from UTC string
+  const getLocalHourVal = (utcStr: string): number => {
+    const d = new Date(utcStr + "Z");
+    return d.getHours() + d.getMinutes() / 60;
+  };
+
+  const getLocalDateStr = (utcStr: string): string => {
+    const d = new Date(utcStr + "Z");
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
 
   // Keep track of current hour for indicator updates
   useEffect(() => {
@@ -41,14 +81,59 @@ export default function CalendarView() {
     );
   }
 
-  // Extract all goals and tasks that are scheduled
-  const scheduledItems: (StateNode & { parentName?: string })[] = [];
-  
+  // Extract scheduled items — with UTC→local conversion and goals inheritance
+  const scheduledItems: (StateNode & {
+    parentName?: string;
+    localFrom?: string;  // local date string (YYYY-MM-DD)
+    localTo?: string;
+    localFromHour?: number;  // local decimal hour
+    localToHour?: number;
+  })[] = [];
+
+  // For GOAL mode: a goal is scheduled if any child task has a schedule
+  // The goal inherits the union of its task schedules
   const collectScheduled = (node: StateNode, parentName?: string) => {
-    if ((node.type === "GOAL" || node.type === "TASK") && (node.scheduled_from || node.scheduled_to)) {
-      const item = { ...node, parentName };
-      if (!item.scheduled_from) item.scheduled_from = item.scheduled_to;
-      if (!item.scheduled_to) item.scheduled_to = item.scheduled_from;
+    if (node.type === "GOAL" && filterType === "GOAL") {
+      // Check child tasks for schedules
+      const taskSchedules: { from: string; to: string }[] = [];
+      const walkTasks = (n: StateNode) => {
+        if (n.type === "TASK" && (n.scheduled_from || n.scheduled_to)) {
+          taskSchedules.push({
+            from: n.scheduled_from || n.scheduled_to!,
+            to: n.scheduled_to || n.scheduled_from!
+          });
+        }
+        n.tasks?.forEach(walkTasks);
+        n.goals?.forEach(walkTasks);
+      };
+      walkTasks(node);
+      if (taskSchedules.length > 0) {
+        // Compute union of all task schedules
+        const earliest = taskSchedules.reduce((a, b) => a.from < b.from ? a : b);
+        const latest = taskSchedules.reduce((a, b) => a.to > b.to ? a : b);
+        const item = {
+          ...node,
+          parentName,
+          localFrom: getLocalDateStr(earliest.from),
+          localTo: getLocalDateStr(latest.to),
+          localFromHour: getLocalHourVal(earliest.from),
+          localToHour: getLocalHourVal(latest.to),
+          scheduled_from: earliest.from,
+          scheduled_to: latest.to
+        };
+        scheduledItems.push(item);
+      }
+    } else if (node.type === "TASK" && filterType === "TASK" && (node.scheduled_from || node.scheduled_to)) {
+      const from = node.scheduled_from || node.scheduled_to!;
+      const to = node.scheduled_to || node.scheduled_from!;
+      const item = {
+        ...node,
+        parentName,
+        localFrom: getLocalDateStr(from),
+        localTo: getLocalDateStr(to),
+        localFromHour: getLocalHourVal(from),
+        localToHour: getLocalHourVal(to)
+      };
       scheduledItems.push(item);
     }
     const currentName = node.name;
@@ -62,7 +147,7 @@ export default function CalendarView() {
   stateTree.orphan_goals.forEach(n => collectScheduled(n));
   stateTree.orphan_tasks.forEach(n => collectScheduled(n));
 
-  const filteredScheduledItems = scheduledItems.filter(item => item.type === filterType);
+  const filteredScheduledItems = scheduledItems.filter(() => true); // already filtered by type in collectScheduled
 
   const formatDateString = (d: Date) => {
     const y = d.getFullYear();
@@ -122,51 +207,33 @@ export default function CalendarView() {
     }
   };
 
-  // Check if item overlaps selected week
-  const isItemInWeek = (item: StateNode) => {
-    const fromStr = item.scheduled_from!.substring(0, 10);
-    const toStr = item.scheduled_to!.substring(0, 10);
+  // Check if item overlaps selected week (using local dates)
+  const isItemInWeek = (item: typeof scheduledItems[0]) => {
+    const fromStr = item.localFrom!;
+    const toStr = item.localTo!;
     return fromStr <= weekEndStr && toStr >= weekStartStr;
   };
 
-  // Check if item overlaps selected day
-  const isItemInDay = (item: StateNode, targetDayStr: string = selectedDateStr) => {
-    const fromStr = item.scheduled_from!.substring(0, 10);
-    const toStr = item.scheduled_to!.substring(0, 10);
+  // Check if item overlaps selected day (using local dates)
+  const isItemInDay = (item: typeof scheduledItems[0], targetDayStr: string = selectedDateStr) => {
+    const fromStr = item.localFrom!;
+    const toStr = item.localTo!;
     return fromStr <= targetDayStr && toStr >= targetDayStr;
   };
 
-  // Daily decimal hour calculations
-  const getDailyHourVal = (item: StateNode, targetDateStr: string, limitHour: number) => {
-    const fromStr = item.scheduled_from || "";
-    const toStr = item.scheduled_to || "";
-    
-    const isStartOnThisDay = fromStr.startsWith(targetDateStr);
-    const isEndOnThisDay = toStr.startsWith(targetDateStr);
-
-    const parseHourPart = (s: string) => {
-      const parts = s.split(/[ T]/);
-      if (parts.length > 1) {
-        const timeParts = parts[1].split(":");
-        if (timeParts.length >= 2) {
-          const h = parseInt(timeParts[0], 10);
-          const m = parseInt(timeParts[1], 10);
-          return h + m / 60;
-        }
-      }
-      return null;
-    };
+  // Daily decimal hour calculations (using local time)
+  const getDailyHourVal = (item: typeof scheduledItems[0], targetDateStr: string, limitHour: number) => {
+    const isStartOnThisDay = item.localFrom === targetDateStr;
+    const isEndOnThisDay = item.localTo === targetDateStr;
 
     if (limitHour === startHour) { // start hour
       if (isStartOnThisDay) {
-        const h = parseHourPart(fromStr);
-        return h !== null ? h : startHour;
+        return item.localFromHour !== undefined ? item.localFromHour : startHour;
       }
       return startHour;
     } else { // end hour
       if (isEndOnThisDay) {
-        const h = parseHourPart(toStr);
-        return h !== null ? h : endHour;
+        return item.localToHour !== undefined ? item.localToHour : endHour;
       }
       return endHour;
     }
@@ -178,18 +245,18 @@ export default function CalendarView() {
     
     // Sort by start date then duration (longest first)
     const sorted = [...weeklyItems].sort((a, b) => {
-      if (a.scheduled_from! < b.scheduled_from!) return -1;
-      if (a.scheduled_from! > b.scheduled_from!) return 1;
-      const aDur = new Date(a.scheduled_to!).getTime() - new Date(a.scheduled_from!).getTime();
-      const bDur = new Date(b.scheduled_to!).getTime() - new Date(b.scheduled_from!).getTime();
+      if (a.localFrom! < b.localFrom!) return -1;
+      if (a.localFrom! > b.localFrom!) return 1;
+      const aDur = new Date(a.localTo!).getTime() - new Date(a.localFrom!).getTime();
+      const bDur = new Date(b.localTo!).getTime() - new Date(b.localFrom!).getTime();
       return bDur - aDur;
     });
 
-    const rows: (StateNode & { parentName?: string })[][] = [];
+    const rows: (StateNode & { parentName?: string; localFrom?: string; localTo?: string; localFromHour?: number; localToHour?: number })[][] = [];
     sorted.forEach(item => {
       let placed = false;
-      const start1 = item.scheduled_from!.substring(0, 10);
-      const end1 = item.scheduled_to!.substring(0, 10);
+      const start1 = item.localFrom!;
+      const end1 = item.localTo!;
 
       for (let r = 0; r < rows.length; r++) {
         const hasOverlap = rows[r].some(existing => {
@@ -221,7 +288,7 @@ export default function CalendarView() {
       return aStart - bStart;
     });
 
-    const rows: (StateNode & { parentName?: string })[][] = [];
+    const rows: (StateNode & { parentName?: string; localFrom?: string; localTo?: string; localFromHour?: number; localToHour?: number })[][] = [];
     sorted.forEach(item => {
       let placed = false;
       const start1 = getDailyHourVal(item, targetDayStr, startHour);
@@ -302,24 +369,10 @@ export default function CalendarView() {
 
   const formatTimeRange = (fromStr?: string | null, toStr?: string | null) => {
     if (!fromStr || !toStr) return "All Day";
-    const hasFromTime = fromStr.includes(":");
-    const hasToTime = toStr.includes(":");
-    if (!hasFromTime && !hasToTime) return "All Day";
-
-    const formatPart = (s: string) => {
-      const parts = s.split(/[ T]/);
-      if (parts.length > 1) {
-        const timeParts = parts[1].split(":");
-        if (timeParts.length >= 2) {
-          return `${timeParts[0]}:${timeParts[1]}`;
-        }
-      }
-      return "";
-    };
-
-    const fromTime = formatPart(fromStr);
-    const toTime = formatPart(toStr);
-    return fromTime && toTime ? `${fromTime} - ${toTime}` : "All Day";
+    const fromLocal = formatUTCLocal(fromStr);
+    const toLocal = formatUTCLocal(toStr);
+    if (!fromLocal && !toLocal) return "All Day";
+    return fromLocal && toLocal ? `${fromLocal} - ${toLocal}` : "All Day";
   };
 
   const copyToClipboard = (text: string) => {
@@ -485,8 +538,8 @@ export default function CalendarView() {
                 packedWeeklyRows.map((row, rowIdx) => (
                   <div key={rowIdx} className="relative h-14 w-full">
                     {row.map(item => {
-                      const startStr = item.scheduled_from!.substring(0, 10);
-                      const endStr = item.scheduled_to!.substring(0, 10);
+                      const startStr = item.localFrom!;
+                      const endStr = item.localTo!;
                       
                       let leftCol = weekDays.findIndex(d => formatDateString(d) === startStr);
                       if (leftCol === -1) {
@@ -514,8 +567,8 @@ export default function CalendarView() {
                             paddingRight: "4px"
                           }}
                           onClick={() => {
-                            const d = new Date(item.scheduled_from!);
-                            setSelectedDate(d);
+                            const parts = item.localFrom!.split("-");
+                            setSelectedDate(new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
                           }}
                           className="absolute inset-y-0 flex flex-col justify-center cursor-pointer group"
                         >
@@ -631,7 +684,7 @@ export default function CalendarView() {
         )}
       </div>
 
-      {/* 2. Left/Right Sidebar Agenda (Span 1) */}
+      {/* 2. Sidebar Agenda (Span 1) */}
       <div className="lg:col-span-1 flex flex-col gap-6">
         
         {/* Selected Date Agenda Panel */}
@@ -722,25 +775,28 @@ export default function CalendarView() {
             
             <div className="flex flex-col gap-1">
               <span className="text-[9px] font-mono uppercase tracking-wider text-[#7A8C74] font-semibold">
-                Schedule target on this day
+                Schedule with natural language
               </span>
               <div className="flex items-center justify-between gap-1 p-2 rounded-lg bg-[#F5F0E6]/50 border border-[#e3dbcd] text-[10px] font-mono text-[#2c312e]">
                 <button
-                  onClick={() => handleSuggestionClick(`SCHEDULE [Target] FROM ${selectedDateStr} 09:00 TO ${selectedDateStr} 18:00`)}
+                  onClick={() => handleSuggestionClick("SCHEDULE [Target] FROM today TO tomorrow")}
                   className="truncate text-left grow hover:text-[#7A8C74] transition-colors font-mono"
                 >
-                  SCHEDULE [Target] FROM {selectedDateStr} 09:00 TO {selectedDateStr} 18:00
+                  SCHEDULE [Target] FROM today TO tomorrow
                 </button>
                 <button
-                  onClick={() => copyToClipboard(`SCHEDULE [Target] FROM ${selectedDateStr} 09:00 TO ${selectedDateStr} 18:00`)}
+                  onClick={() => copyToClipboard("SCHEDULE [Target] FROM today TO tomorrow")}
                   className="p-1 hover:bg-[#e3dbcd]/40 rounded text-[#67736b] hover:text-[#2c312e] transition-colors shrink-0"
                 >
-                  {copiedText === `SCHEDULE [Target] FROM ${selectedDateStr} 09:00 TO ${selectedDateStr} 18:00` ? (
+                  {copiedText === "SCHEDULE [Target] FROM today TO tomorrow" ? (
                     <Check className="h-3 w-3 text-[#5F8C6E]" />
                   ) : (
                     <Copy className="h-3 w-3" />
                   )}
                 </button>
+              </div>
+              <div className="text-[8px] font-mono text-[#67736b] italic mt-1">
+                Try: NOW, today, tomorrow, next friday, 14:30, +3 days
               </div>
             </div>
 
