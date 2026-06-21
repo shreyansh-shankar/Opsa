@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useStore, StateNode } from "@/store/useStore";
+import { useStore, StateNode, StateTree } from "@/store/useStore";
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -14,15 +14,185 @@ import {
   Check,
   CalendarDays,
   CalendarRange,
+  GripVertical,
+  Search,
+  AlertCircle,
 } from "lucide-react";
 
+// Backlog utility helper functions
+const getAllTasks = (tree: StateTree) => {
+  const tasks: (StateNode & {
+    parentResponsibilitySlug?: string;
+    parentProjectSlug?: string;
+    parentGoalSlug?: string;
+  })[] = [];
+
+  tree.responsibilities?.forEach((r) => {
+    r.tasks?.forEach((t) => {
+      tasks.push({ ...t, parentResponsibilitySlug: r.slug });
+    });
+    r.projects?.forEach((p) => {
+      p.tasks?.forEach((t) => {
+        tasks.push({ ...t, parentResponsibilitySlug: r.slug, parentProjectSlug: p.slug });
+      });
+      p.goals?.forEach((g) => {
+        g.tasks?.forEach((t) => {
+          tasks.push({
+            ...t,
+            parentResponsibilitySlug: r.slug,
+            parentProjectSlug: p.slug,
+            parentGoalSlug: g.slug
+          });
+        });
+      });
+    });
+  });
+
+  tree.orphan_projects?.forEach((p) => {
+    p.tasks?.forEach((t) => {
+      tasks.push({ ...t, parentProjectSlug: p.slug });
+    });
+    p.goals?.forEach((g) => {
+      g.tasks?.forEach((t) => {
+        tasks.push({ ...t, parentProjectSlug: p.slug, parentGoalSlug: g.slug });
+      });
+    });
+  });
+
+  tree.orphan_goals?.forEach((g) => {
+    g.tasks?.forEach((t) => {
+      tasks.push({ ...t, parentGoalSlug: g.slug });
+    });
+  });
+
+  tree.orphan_tasks?.forEach((t) => {
+    tasks.push(t);
+  });
+
+  return tasks;
+};
+
+const getAllResponsibilities = (tree: StateTree) => {
+  return tree.responsibilities?.map((r) => ({ slug: r.slug, name: r.name })) || [];
+};
+
+const getAllProjects = (tree: StateTree, parentRespSlug?: string) => {
+  const projects: { slug: string; name: string; parentResponsibilitySlug?: string }[] = [];
+  const walk = (node: StateNode, currentResp?: string) => {
+    let r = currentResp;
+    if (node.type === "RESPONSIBILITY") r = node.slug;
+    if (node.type === "PROJECT") {
+      projects.push({
+        slug: node.slug,
+        name: node.name,
+        parentResponsibilitySlug: r,
+      });
+    }
+    node.projects?.forEach((n) => walk(n, r));
+    node.goals?.forEach((n) => walk(n, r));
+    node.tasks?.forEach((n) => walk(n, r));
+  };
+
+  tree.responsibilities?.forEach((n) => walk(n));
+  if (!parentRespSlug) {
+    tree.orphan_projects?.forEach((n) => walk(n));
+  }
+  
+  if (parentRespSlug) {
+    return projects.filter((p) => p.parentResponsibilitySlug === parentRespSlug);
+  }
+  return projects;
+};
+
+const getAllGoals = (tree: StateTree, parentProjSlug?: string, parentRespSlug?: string) => {
+  const goals: { slug: string; name: string; parentProjectSlug?: string; parentResponsibilitySlug?: string }[] = [];
+  const walk = (node: StateNode, currentResp?: string, currentProj?: string) => {
+    let r = currentResp;
+    let p = currentProj;
+    if (node.type === "RESPONSIBILITY") r = node.slug;
+    if (node.type === "PROJECT") p = node.slug;
+    if (node.type === "GOAL") {
+      goals.push({
+        slug: node.slug,
+        name: node.name,
+        parentProjectSlug: p,
+        parentResponsibilitySlug: r,
+      });
+    }
+    node.projects?.forEach((n) => walk(n, r, p));
+    node.goals?.forEach((n) => walk(n, r, p));
+    node.tasks?.forEach((n) => walk(n, r, p));
+  };
+
+  tree.responsibilities?.forEach((n) => walk(n));
+  tree.orphan_projects?.forEach((n) => walk(n));
+  if (!parentProjSlug && !parentRespSlug) {
+    tree.orphan_goals?.forEach((n) => walk(n));
+  }
+
+  let filtered = goals;
+  if (parentRespSlug) {
+    filtered = filtered.filter((g) => g.parentResponsibilitySlug === parentRespSlug);
+  }
+  if (parentProjSlug) {
+    filtered = filtered.filter((g) => g.parentProjectSlug === parentProjSlug);
+  }
+  return filtered;
+};
+
 export default function CalendarView() {
-  const { stateTree, setPendingConsoleInput, setActiveTab } = useStore();
+  const { stateTree, setPendingConsoleInput, setActiveTab, executeCommand } = useStore();
   const [viewMode, setViewMode] = useState<"weekly" | "daily">("weekly");
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [filterType, setFilterType] = useState<"GOAL" | "TASK">("TASK");
+
+  // Scheduling Drag and Drop State
+  const [activeDraggedTask, setActiveDraggedTask] = useState<{
+    slug: string;
+    name: string;
+    duration: number; // in decimal hours
+    isExisting: boolean;
+    dragStartOffsetHour?: number;
+  } | null>(null);
+
+  const [dragOverPreview, setDragOverPreview] = useState<{
+    slug: string;
+    name: string;
+    startHour: number;
+    duration: number;
+    date: string;
+    weeklyDayIndex?: number;
+    weeklyDaySpan?: number;
+  } | null>(null);
+
+  // Resize State
+  const [resizingState, setResizingState] = useState<{
+    slug: string;
+    edge: "left" | "right";
+    initialStartHour: number;
+    initialEndHour: number;
+    initialX: number;
+    containerWidth: number;
+    date: string;
+  } | null>(null);
+
+  const [liveResizing, setLiveResizing] = useState<{
+    slug: string;
+    startHour: number;
+    endHour: number;
+  } | null>(null);
+
+  // Backlog filters
+  const [backlogResp, setBacklogResp] = useState<string>("");
+  const [backlogProj, setBacklogProj] = useState<string>("");
+  const [backlogGoal, setBacklogGoal] = useState<string>("");
+  const [backlogSearch, setBacklogSearch] = useState<string>("");
+  const [showScheduledInBacklog, setShowScheduledInBacklog] = useState<boolean>(false);
+
+  // Feedback Toast state
+  const [feedbackMessage, setFeedbackMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
 
 
@@ -386,17 +556,355 @@ export default function CalendarView() {
     setActiveTab("console");
   };
 
+  const formatLocalToUTCString = (dateStr: string, hourVal: number): string => {
+    const parts = dateStr.split("-");
+    const y = parseInt(parts[0]);
+    const m = parseInt(parts[1]) - 1;
+    const d = parseInt(parts[2]);
+
+    const localDate = new Date(y, m, d);
+    const h = Math.floor(hourVal);
+    const min = Math.round((hourVal - h) * 60);
+    localDate.setHours(h, min, 0, 0);
+
+    const utcY = localDate.getUTCFullYear();
+    const utcM = String(localDate.getUTCMonth() + 1).padStart(2, "0");
+    const utcD = String(localDate.getUTCDate()).padStart(2, "0");
+    const utcH = String(localDate.getUTCHours()).padStart(2, "0");
+    const utcMin = String(localDate.getUTCMinutes()).padStart(2, "0");
+    const utcSec = String(localDate.getUTCSeconds()).padStart(2, "0");
+
+    return `${utcY}-${utcM}-${utcD} ${utcH}:${utcMin}:${utcSec}`;
+  };
+
+  // Drag and drop event handlers
+  const handleDragLeave = () => {
+    setDragOverPreview(null);
+  };
+
+  const handleBacklogDragStart = (e: React.DragEvent, task: any) => {
+    setActiveDraggedTask({
+      slug: task.slug,
+      name: task.name,
+      duration: 1, // default 1 hour
+      isExisting: false
+    });
+  };
+
+  const handleScheduledDragStart = (e: React.DragEvent, item: any) => {
+    if ((e.target as HTMLElement).closest(".resize-handle")) {
+      e.preventDefault();
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const pct = clickX / rect.width;
+    const startHr = getDailyHourVal(item, selectedDateStr, startHour);
+    const endHr = getDailyHourVal(item, selectedDateStr, endHour);
+    const duration = endHr - startHr;
+    const offset = pct * duration;
+
+    setActiveDraggedTask({
+      slug: item.slug,
+      name: item.name,
+      duration: duration,
+      isExisting: true,
+      dragStartOffsetHour: offset
+    });
+  };
+
+  const handleWeeklyScheduledDragStart = (e: React.DragEvent, item: any) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const pct = clickX / rect.width;
+    
+    // Day duration
+    const fromDate = new Date(item.localFrom!);
+    const toDate = new Date(item.localTo!);
+    const durationDays = Math.round((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const offsetDays = Math.floor(pct * durationDays);
+
+    setActiveDraggedTask({
+      slug: item.slug,
+      name: item.name,
+      duration: durationDays,
+      isExisting: true,
+      dragStartOffsetHour: offsetDays * 24
+    });
+  };
+
+  const handleDailyDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!activeDraggedTask) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relativeX = e.clientX - rect.left;
+    const width = rect.width;
+
+    const hourVal = startHour + (relativeX / width) * totalHours;
+    const offset = activeDraggedTask.dragStartOffsetHour || 0;
+    let startVal = hourVal - offset;
+    // Snap to 15 mins
+    startVal = Math.round(startVal * 4) / 4;
+
+    const duration = activeDraggedTask.duration || 1;
+    const snappedStartHour = Math.max(startHour, Math.min(endHour - duration, startVal));
+
+    setDragOverPreview({
+      slug: activeDraggedTask.slug,
+      name: activeDraggedTask.name,
+      startHour: snappedStartHour,
+      duration: duration,
+      date: selectedDateStr
+    });
+  };
+
+  const handleDailyDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverPreview(null);
+    if (!activeDraggedTask) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relativeX = e.clientX - rect.left;
+    const width = rect.width;
+
+    const hourVal = startHour + (relativeX / width) * totalHours;
+    const offset = activeDraggedTask.dragStartOffsetHour || 0;
+    let startVal = hourVal - offset;
+    startVal = Math.round(startVal * 4) / 4;
+
+    const duration = activeDraggedTask.duration || 1;
+    const snappedStartHour = Math.max(startHour, Math.min(endHour - duration, startVal));
+    const snappedEndHour = snappedStartHour + duration;
+
+    const startStr = formatLocalToUTCString(selectedDateStr, snappedStartHour);
+    const endStr = formatLocalToUTCString(selectedDateStr, snappedEndHour);
+
+    const command = `SCHEDULE "${activeDraggedTask.slug}" FROM "${startStr}" TO "${endStr}"`;
+    const success = await executeCommand(command);
+    if (!success) {
+      setFeedbackMessage({ text: `Failed to schedule task "${activeDraggedTask.name}"`, type: "error" });
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    }
+    setActiveDraggedTask(null);
+  };
+
+  const handleWeeklyDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!activeDraggedTask) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relativeX = e.clientX - rect.left;
+    const width = rect.width;
+
+    const dayIdx = Math.floor((relativeX / width) * 7);
+    const snappedDayIdx = Math.max(0, Math.min(6, dayIdx));
+    const targetDay = weekDays[snappedDayIdx];
+    const targetDayStr = formatDateString(targetDay);
+
+    let spanDays = 1;
+    if (activeDraggedTask.isExisting) {
+      const item = scheduledItems.find(t => t.slug === activeDraggedTask.slug);
+      if (item && item.localFrom && item.localTo) {
+        const fromDate = new Date(item.localFrom);
+        const toDate = new Date(item.localTo);
+        spanDays = Math.round((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        if (spanDays < 1) spanDays = 1;
+      }
+    }
+
+    setDragOverPreview({
+      slug: activeDraggedTask.slug,
+      name: activeDraggedTask.name,
+      startHour: 9,
+      duration: 1,
+      date: targetDayStr,
+      weeklyDayIndex: snappedDayIdx,
+      weeklyDaySpan: spanDays
+    });
+  };
+
+  const handleWeeklyDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverPreview(null);
+    if (!activeDraggedTask) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relativeX = e.clientX - rect.left;
+    const width = rect.width;
+
+    const dayIdx = Math.floor((relativeX / width) * 7);
+    const snappedDayIdx = Math.max(0, Math.min(6, dayIdx));
+    const targetDay = weekDays[snappedDayIdx];
+    const targetDayStr = formatDateString(targetDay);
+
+    let startStr = "";
+    let endStr = "";
+
+    if (activeDraggedTask.isExisting) {
+      const item = scheduledItems.find(t => t.slug === activeDraggedTask.slug);
+      if (item && item.scheduled_from && item.scheduled_to) {
+        const fromDate = new Date(item.localFrom!);
+        const toDate = new Date(item.localTo!);
+        const spanDays = Math.round((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        const fromTimePart = item.scheduled_from.includes("T") ? item.scheduled_from.split("T")[1] : item.scheduled_from.split(" ")[1] || "09:00:00";
+        const toTimePart = item.scheduled_to.includes("T") ? item.scheduled_to.split("T")[1] : item.scheduled_to.split(" ")[1] || "10:00:00";
+        
+        const endDay = new Date(targetDay);
+        endDay.setDate(targetDay.getDate() + spanDays);
+        const endDayStr = formatDateString(endDay);
+
+        startStr = `${targetDayStr} ${fromTimePart.substring(0, 8)}`;
+        endStr = `${endDayStr} ${toTimePart.substring(0, 8)}`;
+      } else {
+        startStr = formatLocalToUTCString(targetDayStr, 9);
+        endStr = formatLocalToUTCString(targetDayStr, 10);
+      }
+    } else {
+      startStr = formatLocalToUTCString(targetDayStr, 9);
+      endStr = formatLocalToUTCString(targetDayStr, 10);
+    }
+
+    const command = `SCHEDULE "${activeDraggedTask.slug}" FROM "${startStr}" TO "${endStr}"`;
+    const success = await executeCommand(command);
+    if (!success) {
+      setFeedbackMessage({ text: `Failed to reschedule task "${activeDraggedTask.name}"`, type: "error" });
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    }
+    setActiveDraggedTask(null);
+  };
+
+  const handleResizeMouseDown = (e: React.MouseEvent, item: any, edge: "left" | "right") => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const container = e.currentTarget.closest(".relative.flex.min-h-\\[420px\\]");
+    if (!container) return;
+    const containerWidth = container.getBoundingClientRect().width;
+
+    const startHr = getDailyHourVal(item, selectedDateStr, startHour);
+    const endHr = getDailyHourVal(item, selectedDateStr, endHour);
+
+    setResizingState({
+      slug: item.slug,
+      edge,
+      initialStartHour: startHr,
+      initialEndHour: endHr,
+      initialX: e.clientX,
+      containerWidth,
+      date: selectedDateStr
+    });
+
+    setLiveResizing({
+      slug: item.slug,
+      startHour: startHr,
+      endHour: endHr
+    });
+  };
+
+  // Resize Effect Listener
+  useEffect(() => {
+    if (!resizingState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - resizingState.initialX;
+      const deltaHours = (deltaX / resizingState.containerWidth) * totalHours;
+
+      let newStart = resizingState.initialStartHour;
+      let newEnd = resizingState.initialEndHour;
+
+      if (resizingState.edge === "left") {
+        newStart = resizingState.initialStartHour + deltaHours;
+        newStart = Math.round(newStart * 4) / 4;
+        newStart = Math.max(startHour, Math.min(newEnd - 0.25, newStart));
+      } else {
+        newEnd = resizingState.initialEndHour + deltaHours;
+        newEnd = Math.round(newEnd * 4) / 4;
+        newEnd = Math.max(newStart + 0.25, Math.min(endHour, newEnd));
+      }
+
+      setLiveResizing({
+        slug: resizingState.slug,
+        startHour: newStart,
+        endHour: newEnd
+      });
+    };
+
+    const handleMouseUp = async () => {
+      if (liveResizing) {
+        const startStr = formatLocalToUTCString(resizingState.date, liveResizing.startHour);
+        const endStr = formatLocalToUTCString(resizingState.date, liveResizing.endHour);
+
+        const command = `SCHEDULE "${resizingState.slug}" FROM "${startStr}" TO "${endStr}"`;
+        const success = await executeCommand(command);
+        if (!success) {
+          setFeedbackMessage({ text: `Failed to resize task`, type: "error" });
+          setTimeout(() => setFeedbackMessage(null), 4000);
+        }
+      }
+      setResizingState(null);
+      setLiveResizing(null);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [resizingState, liveResizing]);
+
   // Agenda Selection items
   const selectedDayItems = filteredScheduledItems.filter(item => isItemInDay(item, selectedDateStr));
+
+  // Extract all backlog info & filter
+  const allBacklogTasks = getAllTasks(stateTree);
+  const responsibilities = getAllResponsibilities(stateTree);
+  const projects = getAllProjects(stateTree, backlogResp || undefined);
+  const goals = getAllGoals(stateTree, backlogProj || undefined, backlogResp || undefined);
+
+  const filteredBacklogTasks = allBacklogTasks.filter(task => {
+    if (!showScheduledInBacklog && (task.scheduled_from || task.scheduled_to)) {
+      return false;
+    }
+    if (backlogResp && task.parentResponsibilitySlug !== backlogResp) {
+      return false;
+    }
+    if (backlogProj && task.parentProjectSlug !== backlogProj) {
+      return false;
+    }
+    if (backlogGoal && task.parentGoalSlug !== backlogGoal) {
+      return false;
+    }
+    if (backlogSearch && !task.name.toLowerCase().includes(backlogSearch.toLowerCase())) {
+      return false;
+    }
+    return true;
+  });
 
   // Render Row Packing Grids
   const packedWeeklyRows = getPackedWeeklyRows();
   const packedDailyRows = getPackedDailyRows(selectedDateStr);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-      {/* 1. Timeline Calendar Grid (Span 3) */}
-      <div className="lg:col-span-3 glass-panel p-5 rounded-2xl border border-[#e3dbcd] bg-[#FAF7F2] shadow-sm flex flex-col gap-5">
+    <div className="flex flex-col gap-4 w-full">
+      {/* Feedback Toast Notification Banner */}
+      {feedbackMessage && (
+        <div className={`p-3.5 rounded-xl border flex items-center gap-2 text-xs font-mono transition-all shadow-sm ${
+          feedbackMessage.type === "success"
+            ? "bg-[#5F8C6E]/10 text-[#2c312e] border-[#5F8C6E]/30"
+            : "bg-[#C25953]/10 text-[#2c312e] border-[#C25953]/30"
+        }`}>
+          <AlertCircle className={`h-4 w-4 ${feedbackMessage.type === "success" ? "text-[#5F8C6E]" : "text-[#C25953]"}`} />
+          <span className="font-semibold">{feedbackMessage.text}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+        {/* 1. Timeline Calendar Grid (Span 3) */}
+        <div className="lg:col-span-3 glass-panel p-5 rounded-2xl border border-[#e3dbcd] bg-[#FAF7F2] shadow-sm flex flex-col gap-5">
         
         {/* Navigation & Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#e3dbcd] pb-4">
@@ -494,7 +1002,12 @@ export default function CalendarView() {
 
         {/* TIMELINE VIEWMODE: WEEKLY */}
         {viewMode === "weekly" && (
-          <div className="relative flex flex-col min-h-[420px] select-none border border-[#e3dbcd] rounded-2xl bg-[#F5F0E6]/25 overflow-hidden">
+          <div
+            onDragOver={handleWeeklyDragOver}
+            onDrop={handleWeeklyDrop}
+            onDragLeave={handleDragLeave}
+            className="relative flex flex-col min-h-[420px] select-none border border-[#e3dbcd] rounded-2xl bg-[#F5F0E6]/25 overflow-hidden"
+          >
             {/* Grid Columns Zebra Background */}
             <div className="grid grid-cols-7 absolute inset-0 pointer-events-none">
               {weekDays.map((day, idx) => {
@@ -556,6 +1069,7 @@ export default function CalendarView() {
                       const widthPercent = (span / 7) * 100;
 
                       const colors = getContextColor(item.parentName || item.name);
+                      const isCurrentlyDragged = activeDraggedTask?.slug === item.slug;
 
                       return (
                         <div
@@ -564,8 +1078,12 @@ export default function CalendarView() {
                             left: `${leftPercent}%`,
                             width: `${widthPercent}%`,
                             paddingLeft: "4px",
-                            paddingRight: "4px"
+                            paddingRight: "4px",
+                            opacity: isCurrentlyDragged ? 0.3 : 1
                           }}
+                          draggable={filterType === "TASK"}
+                          onDragStart={(e) => handleWeeklyScheduledDragStart(e, item)}
+                          onDragEnd={handleDragLeave}
                           onClick={() => {
                             const parts = item.localFrom!.split("-");
                             setSelectedDate(new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
@@ -589,12 +1107,39 @@ export default function CalendarView() {
                 ))
               )}
             </div>
+            
+            {/* Weekly Live Drop Preview */}
+            {dragOverPreview && dragOverPreview.weeklyDayIndex !== undefined && (
+              <div
+                style={{
+                  left: `${(dragOverPreview.weeklyDayIndex / 7) * 100}%`,
+                  width: `${(dragOverPreview.weeklyDaySpan ?? 1) / 7 * 100}%`,
+                  paddingLeft: "4px",
+                  paddingRight: "4px"
+                }}
+                className="absolute bottom-4 h-14 flex flex-col justify-center pointer-events-none z-30"
+              >
+                <div className="h-full rounded-xl border-2 border-dashed border-[#7A8C74]/50 bg-[#7A8C74]/20 flex flex-col justify-center p-2 text-[#7A8C74] opacity-80 animate-pulse">
+                  <span className="text-[10px] font-sans font-bold leading-tight truncate">
+                    {dragOverPreview.name}
+                  </span>
+                  <span className="text-[8px] font-mono mt-0.5">
+                    Release to Schedule
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* TIMELINE VIEWMODE: DAILY */}
         {viewMode === "daily" && (
-          <div className="relative flex flex-col min-h-[420px] select-none border border-[#e3dbcd] rounded-2xl bg-[#F5F0E6]/25 overflow-hidden">
+          <div
+            onDragOver={handleDailyDragOver}
+            onDrop={handleDailyDrop}
+            onDragLeave={handleDragLeave}
+            className="relative flex flex-col min-h-[420px] select-none border border-[#e3dbcd] rounded-2xl bg-[#F5F0E6]/25 overflow-hidden"
+          >
             {/* Grid Hourly Zebra Columns */}
             <div className="absolute inset-0 pointer-events-none flex">
               {Array.from({ length: totalHours }).map((_, idx) => {
@@ -644,13 +1189,19 @@ export default function CalendarView() {
                 packedDailyRows.map((row, rowIdx) => (
                   <div key={rowIdx} className="relative h-14 w-full">
                     {row.map(item => {
-                      const itemStart = getDailyHourVal(item, selectedDateStr, startHour);
-                      const itemEnd = getDailyHourVal(item, selectedDateStr, endHour);
+                      const itemStart = (liveResizing && liveResizing.slug === item.slug)
+                        ? liveResizing.startHour
+                        : getDailyHourVal(item, selectedDateStr, startHour);
+                      const itemEnd = (liveResizing && liveResizing.slug === item.slug)
+                        ? liveResizing.endHour
+                        : getDailyHourVal(item, selectedDateStr, endHour);
 
                       const leftPercent = ((itemStart - startHour) / totalHours) * 100;
                       const widthPercent = ((itemEnd - itemStart) / totalHours) * 100;
 
                       const colors = getContextColor(item.parentName || item.name);
+                      const isCurrentlyDragged = activeDraggedTask?.slug === item.slug;
+                      const isResizingThis = resizingState?.slug === item.slug;
 
                       return (
                         <div
@@ -659,19 +1210,46 @@ export default function CalendarView() {
                             left: `${leftPercent}%`,
                             width: `${widthPercent}%`,
                             paddingLeft: "4px",
-                            paddingRight: "4px"
+                            paddingRight: "4px",
+                            opacity: isCurrentlyDragged ? 0.3 : 1,
+                            zIndex: isResizingThis ? 40 : 10
                           }}
+                          draggable={filterType === "TASK" && !resizingState}
+                          onDragStart={(e) => handleScheduledDragStart(e, item)}
+                          onDragEnd={handleDragLeave}
                           className="absolute inset-y-0 flex flex-col justify-center group"
                         >
-                          <div className={`h-full rounded-xl border p-2 flex flex-col justify-center shadow-sm transition-all hover:scale-[1.01] hover:shadow-md ${colors.bg} ${colors.text} ${colors.border}`}>
-                            <span className="text-[10px] font-sans font-bold leading-tight truncate">
+                          <div className={`relative h-full rounded-xl border p-2 flex flex-col justify-center shadow-sm transition-all hover:scale-[1.01] hover:shadow-md ${colors.bg} ${colors.text} ${colors.border}`}>
+                            
+                            {/* Left Resize Handle */}
+                            {filterType === "TASK" && (
+                              <div
+                                className="absolute top-0 left-0 bottom-0 w-2.5 cursor-ew-resize opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity z-20"
+                                onMouseDown={(e) => handleResizeMouseDown(e, item, "left")}
+                              >
+                                <div className="w-1 h-5 bg-white/40 rounded-full" />
+                              </div>
+                            )}
+
+                            <span className="text-[10px] font-sans font-bold leading-tight truncate px-1">
                               {item.name}
                             </span>
                             {item.parentName && (
-                              <span className={`text-[8px] font-sans font-normal mt-0.5 truncate uppercase tracking-wide ${colors.subtitle}`}>
+                              <span className={`text-[8px] font-sans font-normal mt-0.5 truncate uppercase tracking-wide px-1 ${colors.subtitle}`}>
                                 {item.parentName}
                               </span>
                             )}
+
+                            {/* Right Resize Handle */}
+                            {filterType === "TASK" && (
+                              <div
+                                className="absolute top-0 right-0 bottom-0 w-2.5 cursor-ew-resize opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity z-20"
+                                onMouseDown={(e) => handleResizeMouseDown(e, item, "right")}
+                              >
+                                <div className="w-1 h-5 bg-white/40 rounded-full" />
+                              </div>
+                            )}
+
                           </div>
                         </div>
                       );
@@ -680,12 +1258,175 @@ export default function CalendarView() {
                 ))
               )}
             </div>
+
+            {/* Daily Live Drop Preview */}
+            {dragOverPreview && dragOverPreview.weeklyDayIndex === undefined && dragOverPreview.date === selectedDateStr && (
+              <div
+                style={{
+                  left: `${((dragOverPreview.startHour - startHour) / totalHours) * 100}%`,
+                  width: `${(dragOverPreview.duration / totalHours) * 100}%`,
+                  paddingLeft: "4px",
+                  paddingRight: "4px"
+                }}
+                className="absolute bottom-4 h-14 flex flex-col justify-center pointer-events-none z-30"
+              >
+                <div className="h-full rounded-xl border-2 border-dashed border-[#7A8C74]/50 bg-[#7A8C74]/20 flex flex-col justify-center p-2 text-[#7A8C74] opacity-80 animate-pulse">
+                  <span className="text-[10px] font-sans font-bold leading-tight truncate">
+                    {dragOverPreview.name}
+                  </span>
+                  <span className="text-[8px] font-mono mt-0.5">
+                    Release to Schedule
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* 2. Sidebar Agenda (Span 1) */}
+      {/* 2. Sidebar Agenda & Backlog (Span 1) */}
       <div className="lg:col-span-1 flex flex-col gap-6">
+        
+        {/* Task Backlog Panel */}
+        <div className="glass-panel p-5 rounded-2xl border border-[#e3dbcd] bg-[#FAF7F2] shadow-sm flex flex-col gap-4">
+          <div className="border-b border-[#e3dbcd] pb-2 flex flex-col">
+            <h3 className="text-xs font-mono uppercase tracking-widest text-[#67736b] font-bold">
+              Task Backlog
+            </h3>
+            <span className="text-[10px] text-[#67736b] font-mono mt-0.5">
+              Drag tasks onto the calendar to schedule
+            </span>
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-col gap-2 text-xs font-mono">
+            {/* Search Input */}
+            <div className="relative">
+              <input
+                type="text"
+                value={backlogSearch}
+                onChange={(e) => setBacklogSearch(e.target.value)}
+                placeholder="Search tasks..."
+                className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-[#e3dbcd] bg-[#FAF7F2] text-[#2c312e] focus:outline-none focus:border-[#7A8C74] text-xs font-mono"
+              />
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[#67736b]" />
+            </div>
+
+            {/* Responsibility Select */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] uppercase tracking-wide text-[#67736b] font-semibold">Responsibility</label>
+              <select
+                value={backlogResp}
+                onChange={(e) => {
+                  setBacklogResp(e.target.value);
+                  setBacklogProj(""); // Reset sub-filters
+                  setBacklogGoal("");
+                }}
+                className="w-full px-2.5 py-1.5 rounded-lg border border-[#e3dbcd] bg-[#FAF7F2] text-[#2c312e] focus:outline-none focus:border-[#7A8C74] text-xs font-mono"
+              >
+                <option value="">All Responsibilities</option>
+                {responsibilities.map(r => (
+                  <option key={r.slug} value={r.slug}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Project Select */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] uppercase tracking-wide text-[#67736b] font-semibold">Project</label>
+              <select
+                value={backlogProj}
+                onChange={(e) => {
+                  setBacklogProj(e.target.value);
+                  setBacklogGoal(""); // Reset sub-filter
+                }}
+                className="w-full px-2.5 py-1.5 rounded-lg border border-[#e3dbcd] bg-[#FAF7F2] text-[#2c312e] focus:outline-none focus:border-[#7A8C74] text-xs font-mono"
+              >
+                <option value="">All Projects</option>
+                {projects.map(p => (
+                  <option key={p.slug} value={p.slug}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Goal Select */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] uppercase tracking-wide text-[#67736b] font-semibold">Goal</label>
+              <select
+                value={backlogGoal}
+                onChange={(e) => setBacklogGoal(e.target.value)}
+                className="w-full px-2.5 py-1.5 rounded-lg border border-[#e3dbcd] bg-[#FAF7F2] text-[#2c312e] focus:outline-none focus:border-[#7A8C74] text-xs font-mono"
+              >
+                <option value="">All Goals</option>
+                {goals.map(g => (
+                  <option key={g.slug} value={g.slug}>{g.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Show Scheduled Toggle */}
+            <label className="flex items-center gap-2 cursor-pointer select-none py-1">
+              <input
+                type="checkbox"
+                checked={showScheduledInBacklog}
+                onChange={(e) => setShowScheduledInBacklog(e.target.checked)}
+                className="rounded border-[#e3dbcd] text-[#7A8C74] focus:ring-[#7A8C74] h-3.5 w-3.5"
+              />
+              <span className="text-[10px] text-[#67736b]">Show already scheduled</span>
+            </label>
+          </div>
+
+          {/* Backlog List */}
+          <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto pr-1">
+            {filteredBacklogTasks.length === 0 ? (
+              <div className="py-8 text-center text-[#67736b] font-mono text-xs italic border border-dashed border-[#e3dbcd] rounded-xl bg-[#FAF7F2]/50">
+                No tasks found.
+              </div>
+            ) : (
+              filteredBacklogTasks.map((task) => {
+                const isScheduled = task.scheduled_from || task.scheduled_to;
+                return (
+                  <div
+                    key={task.id}
+                    draggable
+                    onDragStart={(e) => handleBacklogDragStart(e, task)}
+                    onDragEnd={handleDragLeave}
+                    className="flex items-start gap-2 p-2.5 rounded-xl border border-[#e3dbcd] bg-[#FAF7F2] hover:bg-[#F5F0E6]/30 transition-all cursor-grab active:cursor-grabbing group shadow-sm hover:shadow"
+                  >
+                    <GripVertical className="h-3.5 w-3.5 text-[#67736b] mt-0.5 shrink-0" />
+                    <div className="flex flex-col gap-1 grow min-w-0">
+                      <span className="text-xs font-sans font-bold text-[#2c312e] leading-tight truncate">
+                        {task.name}
+                      </span>
+                      
+                      {/* badges */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded uppercase ${
+                          task.priority === "URGENT" ? "bg-[#C25953]/15 text-[#C25953]" :
+                          task.priority === "HIGH" ? "bg-[#CE8D6D]/15 text-[#CE8D6D]" :
+                          task.priority === "LOW" ? "bg-[#5F8C6E]/15 text-[#5F8C6E]" :
+                          "bg-[#788896]/15 text-[#788896]"
+                        }`}>
+                          {task.priority || "MEDIUM"}
+                        </span>
+                        
+                        {isScheduled && (
+                          <span className="text-[8px] font-mono font-bold bg-[#7A8C74]/15 text-[#7A8C74] px-1.5 py-0.5 rounded uppercase">
+                            Scheduled
+                          </span>
+                        )}
+
+                        <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded uppercase bg-[#FAF7F2]/80 text-[#67736b] border border-[#e3dbcd]`}>
+                          {task.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
         
         {/* Selected Date Agenda Panel */}
         <div className="glass-panel p-5 rounded-2xl border border-[#e3dbcd] bg-[#FAF7F2] shadow-sm flex flex-col gap-4">
@@ -828,5 +1569,6 @@ export default function CalendarView() {
 
       </div>
     </div>
+  </div>
   );
 }
