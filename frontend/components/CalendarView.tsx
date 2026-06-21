@@ -1070,6 +1070,8 @@ export default function CalendarView() {
 
                       const colors = getContextColor(item.parentName || item.name);
                       const isCurrentlyDragged = activeDraggedTask?.slug === item.slug;
+                      const isCompleted = item.status === "COMPLETED";
+                      const isBlocked = item.status === "BLOCKED";
 
                       return (
                         <div
@@ -1079,7 +1081,7 @@ export default function CalendarView() {
                             width: `${widthPercent}%`,
                             paddingLeft: "4px",
                             paddingRight: "4px",
-                            opacity: isCurrentlyDragged ? 0.3 : 1
+                            opacity: isCurrentlyDragged ? 0.3 : (isCompleted ? 0.45 : 1)
                           }}
                           draggable={filterType === "TASK"}
                           onDragStart={(e) => handleWeeklyScheduledDragStart(e, item)}
@@ -1090,12 +1092,22 @@ export default function CalendarView() {
                           }}
                           className="absolute inset-y-0 flex flex-col justify-center cursor-pointer group"
                         >
-                          <div className={`h-full rounded-xl border p-2 flex flex-col justify-center shadow-sm transition-all hover:scale-[1.01] hover:shadow-md ${colors.bg} ${colors.text} ${colors.border}`}>
-                            <span className="text-[10px] font-sans font-bold leading-tight truncate">
-                              {item.name}
-                            </span>
+                          <div className={`relative h-full rounded-xl border p-2 flex flex-col justify-center shadow-sm transition-all hover:scale-[1.01] hover:shadow-md ${colors.bg} ${colors.text} ${
+                            isBlocked ? "border-[#C25953] border-2" : colors.border
+                          }`}>
+                            {isBlocked && (
+                              <div className="absolute inset-0 rounded-xl bg-[linear-gradient(45deg,rgba(194,89,83,0.08)_25%,transparent_25%,transparent_50%,rgba(194,89,83,0.08)_50%,rgba(194,89,83,0.08)_75%,transparent_75%,transparent)] bg-[length:16px_16px] pointer-events-none" />
+                            )}
+                            <div className="flex items-center gap-1 min-w-0 relative z-10">
+                              {isBlocked && <AlertCircle className="h-3 w-3 text-[#C25953] shrink-0" />}
+                              <span className={`text-[10px] font-sans font-bold leading-tight truncate ${
+                                isCompleted ? "line-through opacity-70" : ""
+                              }`}>
+                                {item.name}
+                              </span>
+                            </div>
                             {item.parentName && (
-                              <span className={`text-[8px] font-sans font-normal mt-0.5 truncate uppercase tracking-wide ${colors.subtitle}`}>
+                              <span className={`text-[8px] font-sans font-normal mt-0.5 truncate uppercase tracking-wide relative z-10 ${colors.subtitle}`}>
                                 {item.parentName}
                               </span>
                             )}
@@ -1202,6 +1214,8 @@ export default function CalendarView() {
                       const colors = getContextColor(item.parentName || item.name);
                       const isCurrentlyDragged = activeDraggedTask?.slug === item.slug;
                       const isResizingThis = resizingState?.slug === item.slug;
+                      const isCompleted = item.status === "COMPLETED";
+                      const isBlocked = item.status === "BLOCKED";
 
                       return (
                         <div
@@ -1211,7 +1225,7 @@ export default function CalendarView() {
                             width: `${widthPercent}%`,
                             paddingLeft: "4px",
                             paddingRight: "4px",
-                            opacity: isCurrentlyDragged ? 0.3 : 1,
+                            opacity: isCurrentlyDragged ? 0.3 : (isCompleted ? 0.45 : 1),
                             zIndex: isResizingThis ? 40 : 10
                           }}
                           draggable={filterType === "TASK" && !resizingState}
@@ -1219,8 +1233,14 @@ export default function CalendarView() {
                           onDragEnd={handleDragLeave}
                           className="absolute inset-y-0 flex flex-col justify-center group"
                         >
-                          <div className={`relative h-full rounded-xl border p-2 flex flex-col justify-center shadow-sm transition-all hover:scale-[1.01] hover:shadow-md ${colors.bg} ${colors.text} ${colors.border}`}>
+                          <div className={`relative h-full rounded-xl border p-2 flex flex-col justify-center shadow-sm transition-all hover:scale-[1.01] hover:shadow-md ${colors.bg} ${colors.text} ${
+                            isBlocked ? "border-[#C25953] border-2" : colors.border
+                          }`}>
                             
+                            {isBlocked && (
+                              <div className="absolute inset-0 rounded-xl bg-[linear-gradient(45deg,rgba(194,89,83,0.08)_25%,transparent_25%,transparent_50%,rgba(194,89,83,0.08)_50%,rgba(194,89,83,0.08)_75%,transparent_75%,transparent)] bg-[length:16px_16px] pointer-events-none" />
+                            )}
+
                             {/* Left Resize Handle */}
                             {filterType === "TASK" && (
                               <div
@@ -1231,11 +1251,16 @@ export default function CalendarView() {
                               </div>
                             )}
 
-                            <span className="text-[10px] font-sans font-bold leading-tight truncate px-1">
-                              {item.name}
-                            </span>
+                            <div className="flex items-center gap-1 min-w-0 px-1 relative z-10">
+                              {isBlocked && <AlertCircle className="h-3 w-3 text-[#C25953] shrink-0" />}
+                              <span className={`text-[10px] font-sans font-bold leading-tight truncate ${
+                                isCompleted ? "line-through opacity-70" : ""
+                              }`}>
+                                {item.name}
+                              </span>
+                            </div>
                             {item.parentName && (
-                              <span className={`text-[8px] font-sans font-normal mt-0.5 truncate uppercase tracking-wide px-1 ${colors.subtitle}`}>
+                              <span className={`text-[8px] font-sans font-normal mt-0.5 truncate uppercase tracking-wide px-1 relative z-10 ${colors.subtitle}`}>
                                 {item.parentName}
                               </span>
                             )}
